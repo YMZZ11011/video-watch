@@ -61,8 +61,15 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
     <div id="entries" style="margin-top:14px"></div>
     <div class="row" style="justify-content:space-between">
       <button id="add" style="flex:none">+ Add another item</button>
-      <span style="flex:none;display:flex;gap:10px;align-items:center">
+      <span style="flex:none;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
         <span class="hint" id="runhint" style="margin:0"></span>
+        <label for="language" style="margin:0;font-size:13px" title="The whole report is written in this language, whatever language the videos are in, including its headings and buttons. In Chinese, technical terms keep the English in brackets the first time they appear.">Report in</label>
+        <select id="language" style="width:auto">
+          <option value="">the request's language</option>
+          <option value="English">English</option>
+          <option value="Simplified Chinese">简体中文</option>
+          <option value="Traditional Chinese">繁體中文</option>
+        </select>
         <button class="primary" id="run">Watch</button>
       </span>
     </div>
@@ -224,14 +231,6 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
     <h2>Report and run</h2>
     <label for="default_instructions">Default instructions (used when an item has none)</label>
     <textarea id="default_instructions" placeholder="Leave empty for a general summary"></textarea>
-    <label for="language">Report language</label>
-    <select id="language">
-      <option value="">Same as the request</option>
-      <option value="English">English</option>
-      <option value="Simplified Chinese">简体中文 (Simplified Chinese)</option>
-      <option value="Traditional Chinese">繁體中文 (Traditional Chinese)</option>
-    </select>
-    <p class="hint">The whole report is written in this language, whatever language the videos are in, including its headings and buttons. In Chinese, technical terms keep the English in brackets the first time they appear.</p>
     <label for="report_split">When a run has several videos</label>
     <select id="report_split">
       <option value="auto">Automatic: the model groups related videos into reports</option>
