@@ -261,6 +261,18 @@ model looks at what each video was about and groups related ones), one report pe
 for everything, or Custom (the model follows a rule you write). A bundle watched together is never
 split. Each report is its own entry in Past reports (`<run id>`, `<run id>-02`, ...).
 
+## Links that cannot be watched
+
+When a download fails, the app reads why from yt-dlp's own message and sorts it: members-only,
+private, sign-in or bot check required, removed, blocked in your region, not a video link, missing
+file, the site limiting downloads, or a network problem. Only the temporary causes are retried, after a
+pause (30 s and 90 s when the site is limiting downloads; "Retry a failed download automatically"
+turns this off). A failed video inside a bundle is skipped and the rest of the bundle is still watched.
+
+Each failed link is listed on the run's progress card as it happens, with the reason in yt-dlp's
+words and what to do about it, and again in the report. "Retry these links" starts a new run with
+just those links (for example after signing in); "copy the links" puts them on the clipboard.
+
 ## Sign-in for video sites
 
 "Use my login from" takes a browser name (firefox is the most reliable) or the path of an exported

@@ -221,12 +221,13 @@ def extract_report(text: str) -> tuple[str, bool]:
     return text or "", False
 
 
-def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage) -> dict:
+def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage, on_fail=None) -> dict:
     t0 = time.time()
     engine = unit.get("engine") or s["engine"]
     res: dict = {
         "label": unit.get("label"), "instructions": unit.get("instructions") or "", "engine": engine,
         "mode": s["mode"], "videos": [], "rounds": [], "analysis": "", "category": "", "error": None, "llm": {},
+        "failures": [],   # links that could not be watched: url, kind, reason, retryable
     }
     chk = checkpoint_of(cancel)   # waits here while the run is paused; True once it is stopped
     try:
@@ -237,10 +238,23 @@ def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage) -> dic
             if chk():
                 raise llm.Cancelled()
             status(f"preparing video {vi} of {n}")
-            v = prepare_video(src, udir / f"v{vi}", s, unit.get("start"), unit.get("end"),
-                              lambda m, vi=vi: log(f"video {vi}: {m}"),
-                              stage=lambda name, vi=vi: stage(name if n == 1 else f"v{vi} {name}"),
-                              cancelled=chk)
+            try:
+                v = prepare_video(src, udir / f"v{vi}", s, unit.get("start"), unit.get("end"),
+                                  lambda m, vi=vi: log(f"video {vi}: {m}"),
+                                  stage=lambda name, vi=vi: stage(name if n == 1 else f"v{vi} {name}"),
+                                  cancelled=chk)
+            except (SystemExit, Exception) as exc:  # noqa: BLE001  (one bad link must not sink the others)
+                if chk() or str(exc) == "cancelled":
+                    raise llm.Cancelled() from None
+                from download import DownloadError
+                err = exc if isinstance(exc, DownloadError) else DownloadError(str(exc) or exc.__class__.__name__)
+                rec = {"url": src, "video": vi, "kind": err.kind, "reason": err.detail[:500], "retryable": err.retryable}
+                res["failures"].append(rec)
+                if on_fail:
+                    on_fail(rec)
+                log(f"video {vi}: not watched ({err.kind.replace('_', ' ')}): {err.detail[:300]}"
+                    + (f"; carrying on with the other {n - 1} video(s) of this bundle" if n > 1 else ""))
+                continue
             v["id"] = f"v{vi}"
             for k, f in enumerate(v["frames"], 1):
                 f.update(id=f"v{vi}f{k:03d}", round=0)
@@ -248,6 +262,9 @@ def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage) -> dic
             log(f"video {vi}: {v['title']} ({fmt(v['duration'])}), {len(v['frames'])} frames, "
                 f"transcript: {v['transcript_source'] or 'none'}")
 
+        if not videos:   # every link of this item failed
+            f = res["failures"][0] if res["failures"] else {}
+            raise RuntimeError(f"No video could be watched ({f.get('kind', 'error').replace('_', ' ')}): {f.get('reason', '')}"[:600])
         by_id = {v["id"]: v for v in videos}
         dynamic = s["mode"] == "dynamic" and any(v.get("video_path") for v in videos)
         task = unit.get("instructions") or s.get("default_instructions") or ""

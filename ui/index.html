@@ -50,7 +50,9 @@ pre.log{background:var(--bg);border:1px solid var(--line);border-radius:8px;padd
 .overall{font-size:14px;margin:0 0 8px}
 .jobhead{display:flex;gap:10px;align-items:baseline;margin:0 0 10px}.jobhead .jt{font-weight:600;font-size:16px;flex:1;min-width:0;overflow-wrap:anywhere}
 .jobhead .jst{font-size:12px;text-transform:uppercase;letter-spacing:.04em}.st.paused{color:#b7791f}
-.jobbtns{margin-top:12px;display:flex;gap:8px}.jobcard.is-paused .bar i{background:#b7791f}.jobcard .logbox summary{margin-top:10px}.overall b{font-variant-numeric:tabular-nums}
+.jobbtns{margin-top:12px;display:flex;gap:8px}
+.banner.warn{background:rgba(201,162,39,.12);border:1px solid #c9a227;margin-top:12px}.fails{margin:8px 0;padding-left:20px}
+.fails li{margin:0 0 10px;overflow-wrap:anywhere;font-size:14px}.fails .reason{font-family:Consolas,monospace;font-size:12.5px}.jobcard.is-paused .bar i{background:#b7791f}.jobcard .logbox summary{margin-top:10px}.overall b{font-variant-numeric:tabular-nums}
 details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
 .topics{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 14px;border-bottom:1px solid var(--line)}
 .topic{display:flex;align-items:center;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:var(--bg);margin-bottom:-1px}
@@ -97,6 +99,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
       <div class="jobhead"><span class="jt"></span><span class="st jst"></span><button class="link jx hidden">dismiss</button></div>
       <p class="overall"></p>
       <ul class="units"></ul>
+      <div class="failsbox"></div>
       <div class="result"></div>
       <div class="jobbtns"><button class="pause hidden">Pause</button> <button class="stop hidden">Stop</button></div>
       <details class="logbox" open><summary>Progress log</summary><pre class="log"></pre></details>
@@ -243,6 +246,8 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
       <div style="flex:none"><button id="authgo">Check access</button></div>
     </div>
     <p class="hint" id="authout"></p>
+    <label class="check"><input type="checkbox" id="retry_downloads">Retry a failed download automatically when the cause is temporary</label>
+    <p class="hint">The app reads why a download failed. When the site is limiting downloads or the network dropped, it tries again after a pause (30 s and 90 s for a rate limit). A members-only, private, removed or region-blocked video fails the same way every time, so it is not retried. Either way, a failed link is listed on the run's card with the reason and what to do, and the rest of the run carries on.</p>
   </div>
 
   <div class="card">
@@ -641,6 +646,36 @@ function showJob(j) {
   else if (j.report) r = `<div class="banner">${j.status === 'cancelled' ? L('Stopped. Partial report', '已停止。部分报告') : L('Report ready', '报告已完成')}${failedNote}${L(': ', '：')}<a href="${j.report}" target="_blank">${L('open report', '打开报告')}</a> · <button class="link" onclick="openFolder('${j.id}')">open folder</button><br><span class="hint">${esc(j.path)}<br>${L('Progress log saved next to it as run.log', '进度日志保存在同一位置的 run.log')}${j.exported ? '<br>' + L('Copy saved: ', '副本已保存：') + esc(j.exported) : ''}</span></div>`;
   else if (j.status === 'error') r = `<div class="banner bad">${L('Run failed: ', '运行失败：')}${esc(j.error)}</div>`;
   if (q('.result').innerHTML !== r) q('.result').innerHTML = r;
+  showFailures(j, card, running);
+}
+// Links that could not be watched: why, what to do, and a way to try them again.
+function showFailures(j, card, running) {
+  const fails = (j.units || []).flatMap((u, ui) => (u.failures || []).map(f => ({...f, item: ui + 1})));
+  const box = $('.failsbox', card), key = JSON.stringify([fails, running, UI_LANG]);
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  if (!fails.length) { box.innerHTML = ''; return; }
+  const FK = (env.failure_kinds || {})[UI_LANG === 'zh' ? 'zh' : 'en'] || {};
+  box.innerHTML = `<div class="banner warn" data-notr><b>${L(`⚠ ${fails.length} link${fails.length > 1 ? 's' : ''} could not be watched`, `⚠ ${fails.length} 个链接未能观看`)}</b>`
+    + (running ? `<span class="hint"> · ${L('the rest of the run carries on', '其余部分照常进行')}</span>` : '')
+    + '<ul class="fails">' + fails.map(f => {
+      const [label, advice] = FK[f.kind] || FK.other || [f.kind, ''];
+      const link = /^https?:/.test(f.url) ? `<a href="${esc(f.url)}" target="_blank">${esc(f.url)}</a>` : esc(f.url);
+      return `<li>${L('Item', '条目')} ${f.item}, ${L('video', '视频')} ${f.video}: ${link}<br><b>${esc(label)}</b>${f.reason ? ': <span class="reason">' + esc(f.reason) + '</span>' : ''}<br><span class="hint">${esc(advice)}</span></li>`;
+    }).join('') + '</ul>'
+    + `<button class="retryfails">${L('Retry these links', '重试这些链接')}</button> <button class="link copyfails">${L('copy the links', '复制这些链接')}</button> <span class="hint fst"></span></div>`;
+  const st = $('.fst', box);
+  $('.copyfails', box).onclick = () => navigator.clipboard.writeText(fails.map(f => f.url).join('\n'))
+    .then(() => { st.textContent = L('Copied.', '已复制。'); }).catch(() => { st.textContent = fails.map(f => f.url).join(' '); });
+  $('.retryfails', box).onclick = async () => {
+    st.textContent = L('Starting…', '正在开始…');
+    try {
+      const plan = await api('/api/retry', {id: j.id});
+      const r = await api('/api/run', {title: plan.title, entries: plan.entries});
+      lastStatus[r.id] = 'running'; startPolling();
+      st.textContent = L(`Started as "${plan.title}".`, `已作为“${plan.title}”开始。`);
+    } catch (e) { st.textContent = '✗ ' + tr(e.message); }
+  };
 }
 const clock = s => `${Math.floor(s / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`;
 const rough = s => s < 50 ? `${Math.max(10, Math.round(s / 10) * 10)} sec` : `${Math.max(1, Math.round(s / 60))} min`;

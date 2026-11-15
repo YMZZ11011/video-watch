@@ -260,6 +260,16 @@ def _unit_html(i: int, u: dict, s: dict, images: dict | None = None) -> str:
     for v in videos:
         for note in v.get("notes") or []:
             o.append(f'<p class="note">{esc(v["id"])}: {esc(note)}</p>')
+    if u.get("failures"):   # links skipped so the rest of the item could still be watched
+        lang = i18n.code(s)
+        rows = []
+        for f in u["failures"]:
+            label, advice = i18n.failure_text(f.get("kind", "other"), lang)
+            link = (f'<a href="{esc(f["url"])}" target="_blank" rel="noopener noreferrer">{esc(f["url"])}</a>'
+                    if re.match(r"https?://", f.get("url") or "") else esc(f.get("url") or ""))
+            rows.append(f'<li>v{f.get("video")} {link}<br><b>{esc(label)}</b>: {esc(f.get("reason") or "")}'
+                        f'<br><span class="sub">{esc(advice)}</span></li>')
+        o.append(f'<div class="err"><b>{T["not_watched"].format(n=len(u["failures"]))}</b><ul>{"".join(rows)}</ul></div>')
 
     task = u.get("instructions") or s.get("default_instructions")
     o.append(f'<div class="ask">{esc(task)}</div>' if task else f'<p class="note">{T["no_ask"]}</p>')

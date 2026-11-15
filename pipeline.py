@@ -15,7 +15,11 @@ LIB = Path(__file__).parent / "watchlib"
 sys.path.insert(0, str(LIB))
 
 import frames as F  # noqa: E402
-from download import download, fetch_captions, has_video, is_url  # noqa: E402
+from download import DownloadError, download, fetch_captions, has_video, is_url  # noqa: E402
+
+# Pauses before retrying a failed download, by why it failed. A video that is members-only, private,
+# removed or blocked in this region fails the same way every time, so it is not retried.
+RETRY_WAITS = {"rate_limited": (30, 90), "network": (8, 25), "other": (8,)}
 from transcribe import filter_range, format_transcript, parse_vtt  # noqa: E402
 from whisper import load_api_keys, transcribe_video  # noqa: E402
 
@@ -145,15 +149,9 @@ def prepare_video(source: str, vdir: Path, s: dict, start: str | None, end: str 
             log("downloading " + ("video" if need_video else "audio"))
             # Sites sometimes refuse a download for a while (Bilibili answers HTTP 567 to bursts),
             # so try again more gently before giving up.
-            limited = False
-            for attempt, (wait, streams) in enumerate(((0, 8), (8, 1), (25, 1)), 1):
-                if wait:
-                    wait *= 4 if limited else 1   # a rate limit needs a longer pause than a hiccup
-                    log(f"download failed; trying again in {wait}s with a single connection (attempt {attempt} of 3)")
-                    for _ in range(wait * 2):
-                        if cancelled():
-                            raise SystemExit("cancelled")
-                        time.sleep(0.5)
+            attempt, streams = 0, 8
+            while True:
+                attempt += 1
                 try:
                     dl2 = download(source, vdir / "download", audio_only=not need_video,
                                    cookies_from_browser=cookies, concurrency=streams, should_stop=cancelled)
@@ -164,13 +162,19 @@ def prepare_video(source: str, vdir: Path, s: dict, start: str | None, end: str 
                 except SystemExit as exc:
                     if cancelled():
                         raise SystemExit("cancelled") from None
-                    limited = "HTTP 567" in str(exc)
-                    if attempt == 3:
-                        raise SystemExit(
-                            f"{exc} It refused three tries over about two minutes. Wait 15 to 30 minutes and "
-                            "watch this video again; fewer Bilibili videos in one run also helps." if limited else
-                            f"{exc} The site refused the download three times; it may be blocking this connection "
-                            "for now, or the video may need a login (see Sign-in for video sites).") from None
+                    err = exc if isinstance(exc, DownloadError) else DownloadError(str(exc))
+                    waits = RETRY_WAITS.get(err.kind, ()) if s.get("retry_downloads", True) else ()
+                    if attempt > len(waits):
+                        log(f"download failed ({err.kind.replace('_', ' ')}): {err.detail[:300]}"
+                            + ("" if err.retryable or not waits else "; retrying would not help"))
+                        raise err from None
+                    wait, streams = waits[attempt - 1], 1   # retry gently: one connection, after a pause
+                    log(f"download failed ({err.kind.replace('_', ' ')}): {err.detail[:200]}; trying again in {wait}s "
+                        f"(attempt {attempt + 1} of {len(waits) + 1})")
+                    for _ in range(wait * 2):
+                        if cancelled():
+                            raise SystemExit("cancelled")
+                        time.sleep(0.5)
         else:
             dl2 = download(source, vdir / "download")
             if need_video and not has_video(Path(dl2["video_path"])):

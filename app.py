@@ -237,6 +237,7 @@ DEFAULTS = {
     "report_gallery": True, "report_transcript": True, "keep_video": False,
     "report_split": "auto", "report_split_rule": "",   # how a run with several videos is divided into reports
     "batch_summary": True,   # the orchestrator writes a combined summary before the analyses of a batch
+    "retry_downloads": True,   # retry a failed download when the cause is temporary (rate limit, network)
     "report_style": "layered",   # layered: chapters at four depths with a slider; standard: one written analysis
     "report_depth": "detailed",  # the depth a layered report opens at
     "allow_background": True,    # the model may explain theory the videos assume, marked as not from the videos
@@ -419,6 +420,7 @@ def _environment() -> dict:
         "signed_in": signed,
         "keys": api_engines.key_status(),
         "providers": api_engines.presets_public(),
+        "failure_kinds": {"en": i18n.FAILURES["en"], "zh": i18n.FAILURES["zh-Hans"]},
         "data_dir": str(DATA),
         "tools": {t: bool(shutil.which(t)) for t in ("yt-dlp", "ffmpeg", "ffprobe")},
         "transcription": [b for b, _ in load_api_keys(None)],
@@ -895,8 +897,12 @@ def run_job(run_id: str, title: str, units: list[dict], s: dict) -> None:
                     state["stages"].append({"name": name})
                     state.update(stage=name, stage_started=now, **info)
 
+        def failed(rec: dict) -> None:   # shown on the progress card as soon as it happens
+            with lock:
+                state.setdefault("failures", []).append({**rec, "item": i + 1})
+
         r = run_unit(units[i], rdir / "work" / f"u{i + 1}", s,
-                     lambda m: log(f"{tag}: {m}"), lambda d: state.update(detail=d), cancel, stage)
+                     lambda m: log(f"{tag}: {m}"), lambda d: state.update(detail=d), cancel, stage, failed)
         stage(None)
         r["stages"] = state["stages"]
         results[i] = r
@@ -1132,6 +1138,7 @@ class Handler(BaseHTTPRequestHandler):
                     run_id = f"{stamp}{chr(96 + n)}"
                 (RUNS / run_id).mkdir(parents=True, exist_ok=True)
                 jobs[run_id] = {"status": "running", "id": run_id, "title": title, "log": [], "started_at": time.time(),
+                            "plan": units,   # what was asked for, so failed links can be retried
                                 "parallel": s["parallel"], "cancel": RunControl(), "paused": False, "units": [
                     {"label": u["urls"][0] if len(u["urls"]) == 1 else f"Bundle of {len(u['urls'])} videos",
                      "status": "queued", "detail": "", "engine": u.get("engine") or s["engine"],
@@ -1147,6 +1154,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/pause":
             pause_run(str(body.get("id") or ""), bool(body.get("pause", True)))
             return self._json({"ok": True})
+        if path == "/api/retry":   # watch a run's failed links again, as a new run
+            src = jobs.get(str(body.get("id") or ""))
+            if not src:
+                return self._json({"error": "That run is no longer listed."}, 404)
+            entries = []
+            for i, u in enumerate(src.get("plan") or []):
+                bad = [f["url"] for f in src["units"][i].get("failures") or []]
+                if bad:
+                    entries.append({"urls": bad, "instructions": u.get("instructions") or "", "start": u.get("start") or "",
+                                    "end": u.get("end") or "", "engine": u.get("engine") or "", "combine": len(bad) > 1})
+            if not entries:
+                return self._json({"error": "No failed links to retry."}, 400)
+            return self._json({"entries": entries, "title": f"{src.get('title') or 'Run'} (retry)"})
         if path == "/api/dismiss":   # hide a finished run's progress card
             with lock:
                 if jobs.get(str(body.get("id")), {}).get("status") != "running":

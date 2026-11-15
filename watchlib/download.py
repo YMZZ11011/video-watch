@@ -32,7 +32,7 @@ def is_url(source: str) -> bool:
 def resolve_local(path: str) -> dict:
     p = Path(path).expanduser().resolve()
     if not p.exists():
-        raise SystemExit(f"File not found: {p}")
+        raise DownloadError(f"File not found: {p}")
     if p.suffix.lower() not in VIDEO_EXTS:
         print(
             f"[watch] warning: {p.suffix} is not a known video extension, proceeding anyway",
@@ -87,17 +87,68 @@ def _pick_video(out_dir: Path, need_video: bool = False) -> Path | None:
 
 RATE_LIMITED = "Bilibili is refusing downloads from this connection for now (HTTP 567, its anti-bot limit)."
 
+# Why a download failed, read from yt-dlp's own words. Each kind decides whether retrying can help.
+# (kind, patterns, retry helps)
+KINDS = [
+    ("members_only", ("members-only", "join this channel", "available to this channel's members", "会员专属", "充电专属"), False),
+    ("private", ("private video", "video is private", "this video is private"), False),
+    ("bot_check", ("not a bot", "confirm you're not a bot", "confirm you are not a bot"), False),
+    ("login", ("sign in to confirm your age", "age-restricted", "login required", "requires authentication",
+               "use --cookies", "need to log in", "please log in", "account cookies", "inappropriate for some users"), False),
+    ("geo", ("not available in your country", "geo restrict", "geo-restrict", "not available in your region",
+             "uploader has not made this video available"), False),
+    ("unavailable", ("video unavailable", "has been removed", "no longer available", "does not exist", "been terminated",
+                     "http error 404", "this video is unavailable", "account associated with this video has been"), False),
+    ("unsupported", ("unsupported url", "is not a valid url", "no video formats found"), False),
+    ("not_found_file", ("file not found",), False),
+    ("rate_limited", ("http error 567", "http error 429", "too many requests", "rate-limit", "rate limit", "anti-bot limit"), True),
+    ("network", ("timed out", "timeout", "connection reset", "connection aborted", "unable to download webpage",
+                 "getaddrinfo", "network is unreachable", "temporary failure in name resolution", "remote end closed",
+                 "ssl:", "certificate verify", "http error 5"), True),
+]
 
-def _run(cmd: list[str]) -> tuple[int, bool]:
-    """Run yt-dlp, echoing its output to stderr. Returns (exit code, whether the site answered HTTP 567)."""
+
+def classify(text: str) -> tuple[str, bool]:
+    """(kind, whether retrying can help) for an error text."""
+    low = (text or "").lower()
+    for kind, words, retry in KINDS:
+        if any(w in low for w in words):
+            return kind, retry
+    return "other", True
+
+
+class DownloadError(SystemExit):
+    """A video that could not be fetched, with the reason in yt-dlp's words and its kind."""
+
+    def __init__(self, message: str, detail: str = ""):
+        super().__init__(message)
+        self.detail = (detail or message).strip()
+        self.kind, self.retryable = classify(self.detail + " " + message)
+
+
+def _run(cmd: list[str]) -> tuple[int, bool, list[str]]:
+    """Run yt-dlp, echoing its output to stderr. Returns (exit code, whether the site answered
+    HTTP 567, yt-dlp's ERROR lines)."""
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    hit = False
+    hit, errors = False, []
     for raw in p.stdout:
         line = raw.decode("utf-8", "replace")
         hit = hit or "HTTP Error 567" in line
+        if line.startswith("ERROR:") and line[6:].strip():
+            errors.append(line[6:].strip())
         sys.stderr.write(line)
     sys.stderr.flush()
-    return p.wait(), hit
+    return p.wait(), hit, errors
+
+
+def _reason(errors: list[str]) -> str:
+    """The ERROR line that explains the failure best (a specific one over a generic retry message)."""
+    if not errors:
+        return ""
+    for e in errors:
+        if classify(e)[0] not in ("other", "rate_limited", "network"):
+            return e
+    return errors[-1]
 
 
 def _other_formats(out_dir: Path) -> tuple[list[dict], set[str]]:
@@ -216,7 +267,7 @@ def download_url(
 
     # yt-dlp may exit non-zero if a subtitle variant fails (e.g. 429) even when
     # the video itself downloaded fine. Treat "video file present" as success.
-    code, limited = _run(cmd)
+    code, limited, errors = _run(cmd)
     video = _pick_video(out_dir, need_video=not audio_only)
     note = None
     if video is None and not audio_only:
@@ -228,10 +279,11 @@ def download_url(
                 break
             print(f"[watch] the {'/'.join(sorted(tried))} stream was refused; trying {f['height']}p "
                   f"(format {f['format_id']})", file=sys.stderr, flush=True)
-            _, hit = _run(base + ["--load-info-json", str(out_dir / "video.info.json"),
-                                  "-f", f"{f['format_id']}+ba/{f['format_id']}",
-                                  "--merge-output-format", "mp4", "-o", output_template])
+            _, hit, more = _run(base + ["--load-info-json", str(out_dir / "video.info.json"),
+                                        "-f", f"{f['format_id']}+ba/{f['format_id']}",
+                                        "--merge-output-format", "mp4", "-o", output_template])
             limited = limited or hit
+            errors += more
             video = _pick_video(out_dir, need_video=True)
             if video:
                 note = (f"The site refused the first video stream it offered, so the {f['height']}p "
@@ -240,9 +292,12 @@ def download_url(
             tried.add(str(f["format_id"]))
     if video is None:
         got = _pick_video(out_dir)
-        if limited:
-            raise SystemExit(RATE_LIMITED)
-        raise SystemExit(
+        why = _reason(errors)
+        if limited and (not why or classify(why)[0] in ("rate_limited", "other")):
+            raise DownloadError(RATE_LIMITED, why or "HTTP Error 567")
+        if why:
+            raise DownloadError(why.removeprefix("[youtube] ").removeprefix("[BiliBili] "), why)
+        raise DownloadError(
             f"The site sent only the audio; every video stream it offered was refused (yt-dlp exit {code})."
             if got and not audio_only else f"yt-dlp did not produce a video file in {out_dir} (exit {code})"
         )
