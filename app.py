@@ -1383,7 +1383,10 @@ def open_window(url: str) -> subprocess.Popen | None:
     return _window([edge, f"--app={url}", f"--user-data-dir={DATA / 'window-profile'}",
                              "--no-first-run", "--no-default-browser-check", "--disable-background-mode",
                              "--disable-extensions", "--disable-sync",
-                             "--window-size=1320,920"])
+                             "--window-size=1320,920",
+                             # keep the app's page awake when minimised or covered, so its check-ins continue
+                             "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+                             "--disable-backgrounding-occluded-windows"])
 
 
 def already_running(url: str) -> bool:
@@ -1423,8 +1426,10 @@ def main() -> None:
             if watch and seen["bye"] and now - seen["bye"] > 6 and seen["ping"] < seen["bye"]:
                 why = "the window was closed"  # it said goodbye and no window has checked in since
                 break
-            if watch and seen["ping"] and now - seen["ping"] > 600 and not running_ids():
-                why = "no window has checked in for 10 minutes"
+            # Edge may put an idle or minimised window to sleep, which stops its check-ins without it
+            # being closed, so this is only a long backstop for a window that vanished without a goodbye.
+            if watch and seen["ping"] and now - seen["ping"] > 6 * 3600 and not running_ids():
+                why = "no window has checked in for 6 hours"
                 break
             time.sleep(0.5)
     except KeyboardInterrupt:
