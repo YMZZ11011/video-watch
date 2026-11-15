@@ -1,0 +1,16 @@
+# build output and tools
+.build/
+dist/
+__pycache__/
+*.pyc
+*.spec
+
+# anything the app writes when run from source (reports, settings, keys, logs)
+runs/
+uploads/
+tmp/
+window-profile/
+history.json
+settings.json
+keys.json
+app.log

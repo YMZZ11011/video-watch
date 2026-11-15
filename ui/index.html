@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Video Watch</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1d1c1a;--mute:#6b6a65;--line:#dedcd4;--accent:#a5481f;--accent-ink:#fff;--soft:#f1ede4;--bad:#a3281c;--ok:#2f6b3c}
+@media (prefers-color-scheme:dark){:root{--bg:#161614;--card:#1f1f1c;--ink:#ebe9e3;--mute:#a09e97;--line:#3a3934;--accent:#e58a5c;--accent-ink:#1a1108;--soft:#2a2925;--bad:#ef8f84;--ok:#86c795}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+header{display:flex;align-items:baseline;gap:14px;padding:18px 24px 6px;flex-wrap:wrap}
+h1{font-size:22px;margin:0}h2{font-size:15px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute)}
+.env{font-size:13px;color:var(--mute)}.env b.no{color:var(--bad)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:20px;padding:12px 24px 60px;align-items:start}
+@media (max-width:960px){.layout{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
+input[type=text],input[type=number],input[type=password],textarea,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{resize:vertical;min-height:58px}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.row>*{flex:1;min-width:90px}
+.check{display:flex;gap:8px;align-items:flex-start;margin:10px 0 0;color:var(--ink);font-size:14px}.check input{margin-top:3px}
+button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--accent)}button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;padding:10px 22px}
+button:disabled{opacity:.5;cursor:default}button.link{border:0;background:none;color:var(--mute);padding:2px 4px;font-size:13px}
+.entry{border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;background:var(--bg)}
+.entry.drop{outline:2px dashed var(--accent);outline-offset:2px}
+.entry-head{display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:14px}
+.hint{font-size:12.5px;color:var(--mute);margin:4px 0 0}
+.modes{display:grid;gap:6px}
+.mode{display:flex;gap:9px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer;margin:0;color:var(--ink);font-size:14px}
+.mode:has(input:checked){border-color:var(--accent);background:var(--soft)}.mode small{display:block;color:var(--mute);font-size:12.5px}
+.sub{margin:8px 0 0 4px;padding-left:12px;border-left:2px solid var(--line)}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg label{flex:1;margin:0;text-align:center;padding:8px;cursor:pointer;color:var(--ink);font-size:14px}
+.seg input{position:absolute;opacity:0}.seg label:has(input:checked){background:var(--accent);color:var(--accent-ink);font-weight:600}
+.seg label:has(input:disabled){opacity:.45;cursor:default}
+.units{list-style:none;margin:0;padding:0}.units li{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+.units .st{width:78px;flex:none;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);padding-top:2px}
+.st.running{color:var(--accent)}.st.done{color:var(--ok)}.st.error{color:var(--bad)}
+.units .lb{flex:1;min-width:0;overflow-wrap:anywhere}.units .dt{color:var(--mute);font-size:13px}
+pre.log{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.5 Consolas,monospace;max-height:220px;overflow:auto;white-space:pre-wrap;margin:12px 0 0}
+.banner{padding:10px 14px;border-radius:8px;margin-top:12px;background:var(--soft)}.banner.bad{color:var(--bad)}
+.banner a{color:var(--accent);font-weight:600}
+.runs{list-style:none;margin:0;padding:0;font-size:14px}.runs li{padding:7px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;justify-content:space-between}
+.runs a{color:var(--accent);text-decoration:none}.lib h3{font-size:13px;margin:16px 0 2px;color:var(--mute);font-weight:600}.chip{font-size:12px;border:1px solid var(--line);border-radius:10px;padding:1px 8px;background:none;cursor:pointer;color:inherit;white-space:nowrap}.grp{float:right;font-size:13px}.grp button.on{font-weight:700;text-decoration:underline}.acts{white-space:nowrap}.link.danger{color:#b3261e}.hidden{display:none}
+.bar{height:5px;border-radius:3px;background:var(--line);margin:6px 0 2px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent);transition:width .8s linear}
+.overall{font-size:14px;margin:0 0 8px}.overall b{font-variant-numeric:tabular-nums}
+details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
+</style>
+</head>
+<body>
+<header><h1>Video Watch</h1><span class="env" id="env">checking tools…</span><button class="link" id="quit" style="margin-left:auto">Quit</button></header>
+<div class="layout">
+<div>
+  <div class="card">
+    <h2>What to watch</h2>
+    <label for="title">Report title (optional)</label>
+    <input type="text" id="title" placeholder="e.g. Fed press conference review">
+    <div id="entries" style="margin-top:14px"></div>
+    <div class="row" style="justify-content:space-between">
+      <button id="add" style="flex:none">+ Add another item</button>
+      <span style="flex:none;display:flex;gap:10px;align-items:center">
+        <span class="hint" id="runhint" style="margin:0"></span>
+        <button class="primary" id="run">Watch</button>
+      </span>
+    </div>
+    <div id="formerr" class="banner bad hidden"></div>
+  </div>
+
+  <div class="card hidden" id="jobcard">
+    <h2>Progress</h2>
+    <p class="overall" id="overall"></p>
+    <ul class="units" id="units"></ul>
+    <div id="result"></div>
+    <button id="cancel" class="hidden" style="margin-top:12px">Stop</button>
+    <pre class="log" id="log"></pre>
+  </div>
+
+  <div class="card">
+    <h2>Past reports</h2>
+    <p class="hint" id="storeline" style="margin:0 0 8px"></p>
+    <ul class="runs" id="runs"><li class="hint">None yet.</li></ul>
+    <p style="margin:12px 0 0"><button class="link" id="openruns">open reports folder</button> · <button class="link" id="freework">delete working files</button> · <button class="link danger" id="delall">delete all reports</button></p>
+  </div>
+
+  <div class="card lib">
+    <h2>Library <span class="grp"><button class="link" data-group="date">by date</button> · <button class="link" data-group="category">by category</button></span></h2>
+    <p class="hint" id="libline" style="margin:0"></p>
+    <div id="library"></div>
+  </div>
+</div>
+
+<div>
+  <div class="card">
+    <h2>Model</h2>
+    <div class="seg" id="engine">
+      <label><input type="radio" name="engine" value="claude">Claude Code</label>
+      <label><input type="radio" name="engine" value="codex">Codex</label>
+    </div>
+    <div class="seg" id="engine2" style="margin-top:6px">
+      <label><input type="radio" name="engine" value="claude_api">Claude API</label>
+      <label><input type="radio" name="engine" value="openai_api">Other APIs</label>
+    </div>
+    <p class="hint" id="enginehint"></p>
+    <div id="signin" class="banner hidden" style="font-size:13.5px"></div>
+    <div data-engine="claude">
+      <label for="claude_model">Claude model</label>
+      <select id="claude_model" class="modelpick" data-engine-models="claude"></select>
+      <label for="claude_effort">Effort</label>
+      <select id="claude_effort"><option value="">CLI default</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select>
+    </div>
+    <div data-engine="codex">
+      <label for="codex_model">Codex model</label>
+      <select id="codex_model" class="modelpick" data-engine-models="codex"></select>
+      <label for="codex_effort">Reasoning effort</label>
+      <select id="codex_effort"><option value="">CLI default</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select>
+    </div>
+    <div data-engine="claude_api">
+      <label for="claude_api_model">Claude model</label>
+      <select id="claude_api_model" class="modelpick" data-engine-models="claude_api"></select>
+      <label for="claude_api_effort">Effort</label>
+      <select id="claude_api_effort"><option value="">Model default</option><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select>
+      <div class="keybox" data-provider="anthropic" data-engine-for="claude_api"></div>
+    </div>
+    <div data-engine="openai_api">
+      <label for="openai_api_provider">Provider</label>
+      <select id="openai_api_provider"></select>
+      <div class="banner" id="providerhint" style="font-size:13px;margin-top:8px"></div>
+      <label for="openai_api_model">Model</label>
+      <select id="openai_api_model" class="modelpick" data-engine-models="openai_api"></select>
+      <div class="keybox" id="otherkey" data-provider="openai" data-engine-for="openai_api"></div>
+      <details><summary>Address, image and length limits</summary>
+        <label for="openai_api_base">API address</label>
+        <input type="text" id="openai_api_base">
+        <div class="row">
+          <div><label for="openai_api_vision">Model can see images</label><select id="openai_api_vision"><option value="">Provider default</option><option value="yes">Yes</option><option value="no">No, text only</option></select></div>
+          <div><label for="openai_api_images">Images per request</label><input type="number" id="openai_api_images" min="0" max="100"></div>
+          <div><label for="openai_api_max_tokens">Max output tokens</label><input type="number" id="openai_api_max_tokens" min="0"></div>
+        </div>
+        <label for="openai_api_effort">Reasoning effort</label>
+        <select id="openai_api_effort"><option value="">Model default</option><option>minimal</option><option>low</option><option>medium</option><option>high</option></select>
+        <p class="hint">0 or empty means the provider's default shown in the box. A model that cannot see images can still write the report: add a model that can under Agents, Sub-agent settings, Who the sub-agents are, and it describes the frames first. Fewer images per request means more, smaller calls. Raise max output tokens if reports stop mid-sentence and the provider allows more.</p>
+        <p class="hint" id="notsupported"></p>
+      </details>
+    </div>
+    <p class="hint" id="modelnote">Each item can also override the model in its own card. Claude Code and Codex run on your own CLI sign-in; the APIs use a key and are billed per use by the provider.</p>
+    <label for="agents">Agents</label>
+    <select id="agents"><option value="auto">Automatic</option><option value="single">One agent does everything</option><option value="multi">Always split the frames across sub-agents</option></select>
+    <p class="hint" id="agenthint"></p>
+    <details><summary>Sub-agent settings</summary>
+      <div class="row">
+        <div><label for="agent_chunk">Frames per sub-agent</label><input type="number" id="agent_chunk" min="5" max="200"></div>
+        <div><label for="agent_parallel">Sub-agents at once</label><input type="number" id="agent_parallel" min="1" max="12"></div>
+      </div>
+      <label>Who the sub-agents are</label>
+      <input type="hidden" id="agent_pool">
+      <div id="poolrows"></div>
+      <button class="link" id="pooladd">+ add a sub-agent type</button>
+      <p class="hint" id="poolhint"></p>
+      <p class="hint">Sub-agents each open one slice of the frames at the same time and write notes; the main model then writes the report from the notes and the transcript. Not used in Dynamic mode.</p>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>How the video is watched</h2>
+    <div class="modes" id="modes">
+      <label class="mode"><input type="radio" name="mode" value="dynamic"><span>Dynamic<small>The model reads the transcript and a few overview frames, then asks for the exact moments it wants. Every time it picks is recorded in the report.</small></span></label>
+      <label class="mode"><input type="radio" name="mode" value="interval"><span>Fixed interval<small>One frame every N seconds or minutes.</small></span></label>
+      <label class="mode"><input type="radio" name="mode" value="count"><span>Fixed count<small>N frames spread evenly across the video.</small></span></label>
+      <label class="mode"><input type="radio" name="mode" value="scene"><span>Scene changes<small>A frame at each visual cut; falls back to even sampling on static video. Slowest to extract.</small></span></label>
+      <label class="mode"><input type="radio" name="mode" value="keyframes"><span>Keyframes<small>The encoder's own keyframes. Fast, lands near cuts.</small></span></label>
+      <label class="mode"><input type="radio" name="mode" value="transcript"><span>Transcript only<small>No frames. Skips the video download when captions exist.</small></span></label>
+    </div>
+
+    <div class="sub" data-mode="interval">
+      <div class="row"><div><label for="interval_value">One frame every</label><input type="number" id="interval_value" min="0.1" step="any"></div>
+      <div><label for="interval_unit">Unit</label><select id="interval_unit"><option>seconds</option><option>minutes</option></select></div></div>
+      <p class="hint" id="caphint"></p>
+    </div>
+    <div class="sub" data-mode="count"><label for="count">Frames per video</label><input type="number" id="count" min="1"></div>
+    <div class="sub" data-mode="dynamic">
+      <div class="row"><div><label for="dynamic_overview">Overview frames</label><input type="number" id="dynamic_overview" min="0"></div>
+      <div><label for="dynamic_budget">Frames it may request</label><input type="number" id="dynamic_budget" min="1"></div>
+      <div><label for="dynamic_rounds">Request rounds</label><input type="number" id="dynamic_rounds" min="1"></div></div>
+      <p class="hint">Overview frames are evenly spaced and shown up front, which matters most when there is no transcript. Set to 0 to let the model start from the transcript alone.</p>
+    </div>
+    <div data-mode="interval count scene keyframes dynamic">
+      <div class="row">
+        <div data-mode="interval count scene keyframes"><label for="max_frames">Frame cap per video (0 = automatic)</label><input type="number" id="max_frames" min="0"></div>
+        <div><label for="resolution">Frame width (px)</label><input type="number" id="resolution" min="128" step="64"></div>
+        <div><label for="frame_limit">Safety limit (frames)</label><input type="number" id="frame_limit" min="1"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="require_all_frames">Make the model open every frame (Claude Code)</label>
+      <p class="hint">Claude tends to open only a few frames when given many. With this on, the app checks which frames were opened and sends it back for the rest, up to three times. Slower and costlier, but the frames are actually looked at. Codex always receives every frame.</p>
+      <p class="hint" id="autohint" data-mode="interval count scene keyframes"></p>
+      <p class="hint">512px is enough for most footage; use 1024 when on-screen text has to be read. The safety limit is the most frames any video can get, whatever the other settings say (up to <span id="hardcap"></span>).</p>
+      <label class="check" data-mode="scene keyframes"><input type="checkbox" id="dedup">Drop near-identical frames (held slides, static screens)</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Transcript</h2>
+    <label class="check"><input type="checkbox" id="use_captions">Use the platform's captions when available</label>
+    <label class="check"><input type="checkbox" id="whisper">Transcribe the audio when there are no captions</label>
+    <p class="hint" id="whisperhint"></p>
+    <div class="row">
+      <div><label for="whisper_backend">Transcription service</label><select id="whisper_backend"><option value="">Automatic</option><option>gemini</option><option>groq</option><option>openai</option></select></div>
+    </div>
+    <h2 style="margin-top:18px">Sign-in for video sites</h2>
+    <label for="cookies_browser">Use my login from</label>
+    <input type="text" id="cookies_browser" list="cookiechoices" placeholder="none (public videos only)">
+    <datalist id="cookiechoices"><option value="firefox"><option value="chrome"><option value="edge"><option value="brave"></datalist>
+    <p class="hint">For videos that need an account (Bilibili above 480p or members-only, age-restricted YouTube, private playlists): log in to the site in that browser, then name the browser here. Firefox is the most reliable; Chrome and Edge often lock their cookies while open. Otherwise export a cookies.txt file from your browser and put its full path here. The app never sees your password, only the browser's saved session.</p>
+    <div class="row" style="align-items:end">
+      <div><label for="authurl">Check a video</label><input type="text" id="authurl" placeholder="paste a URL from the site"></div>
+      <div style="flex:none"><button id="authgo">Check access</button></div>
+    </div>
+    <p class="hint" id="authout"></p>
+  </div>
+
+  <div class="card">
+    <h2>Report and run</h2>
+    <label for="default_instructions">Default instructions (used when an item has none)</label>
+    <textarea id="default_instructions" placeholder="Leave empty for a general summary"></textarea>
+    <label for="language">Report language</label>
+    <select id="language">
+      <option value="">Same as the request</option>
+      <option value="English">English</option>
+      <option value="Simplified Chinese">简体中文 (Simplified Chinese)</option>
+      <option value="Traditional Chinese">繁體中文 (Traditional Chinese)</option>
+    </select>
+    <p class="hint">The whole report is written in this language, whatever language the videos are in, including its headings and buttons. In Chinese, technical terms keep the English in brackets the first time they appear.</p>
+    <label for="report_split">When a run has several videos</label>
+    <select id="report_split">
+      <option value="auto">Automatic: the model groups related videos into reports</option>
+      <option value="video">One report per video</option>
+      <option value="single">One report for everything</option>
+      <option value="custom">Custom: group by my rule</option>
+    </select>
+    <textarea id="report_split_rule" class="hidden" placeholder="e.g. One report per channel. Or: trading videos together, everything else separate."></textarea>
+    <p class="hint" id="splithint"></p>
+    <label for="report_style">Report style</label>
+    <select id="report_style">
+      <option value="layered">Layered: chapters with a depth slider, from gist to deep dive</option>
+      <option value="standard">Standard: one written analysis</option>
+    </select>
+    <div id="layeredopts">
+      <div class="row">
+        <div><label for="report_depth">Reports open at</label><select id="report_depth"><option value="gist">Gist</option><option value="summary">Summary</option><option value="detailed">Detailed</option><option value="deep">Deep dive</option></select></div>
+      </div>
+      <label class="check"><input type="checkbox" id="allow_background">Explain the theory the videos assume, from the model's own knowledge (marked "Background, not from the videos")</label>
+    </div>
+    <p class="hint" id="stylehint"></p>
+    <label class="check"><input type="checkbox" id="batch_summary">Combined summary for a batch: the main model reads every analysis and writes an overview that comes first</label>
+    <p class="hint">A report holding several videos opens with it. When a run is split into several reports, an extra overview report covers the whole batch and links to the others.</p>
+    <label class="check"><input type="checkbox" id="report_gallery">Include every frame examined in the report</label>
+    <label class="check"><input type="checkbox" id="report_transcript">Include the transcript</label>
+    <label class="check"><input type="checkbox" id="keep_video">Keep downloaded video files after the run</label>
+    <details><summary>Advanced</summary>
+      <div class="row">
+        <div><label for="parallel">Items at once</label><input type="number" id="parallel" min="1" max="4"></div>
+        <div><label for="timeout_min">Timeout per turn (min)</label><input type="number" id="timeout_min" min="1"></div>
+        <div><label for="max_turns">Max turns (Claude)</label><input type="number" id="max_turns" min="5"></div>
+      </div>
+    </details>
+    <p class="hint" id="saved" style="margin-top:12px"></p>
+  </div>
+
+  <div class="card">
+    <h2>Storage</h2>
+    <label class="check"><input type="checkbox" id="cleanup_work">Delete working files (frames, audio) once the report is written</label>
+    <p class="hint">The report already has its images built in, so nothing is lost. Ignored while "Keep downloaded video files" is on.</p>
+    <label class="check"><input type="checkbox" id="report_compress">Compress the frame gallery images in the report</label>
+    <div class="row">
+      <div><label for="report_image_width">Gallery image width (px)</label><input type="number" id="report_image_width" min="64" step="16"></div>
+      <div><label for="report_image_quality">Quality (10 to 100)</label><input type="number" id="report_image_quality" min="10" max="100"></div>
+    </div>
+    <p class="hint">Runs after the analysis, so the model always sees full-size frames. Frames the report cites in its text stay full size; only the "every frame examined" gallery shrinks.</p>
+    <label for="keep_runs">Keep only the newest reports (0 = keep all)</label>
+    <input type="number" id="keep_runs" min="0">
+    <p class="hint">Older reports are deleted from this computer after each run. Copies saved to the folder below are never deleted.</p>
+    <label for="export_dir">Also save a copy of each report to this folder</label>
+    <input type="text" id="export_dir" placeholder="e.g. G:\My Drive\Video Watch (empty = off)">
+    <label for="export_layout">Folder and file layout</label>
+    <input type="text" id="export_layout" list="layouts">
+    <datalist id="layouts">
+      <option value="{date} {time} {title}">All in one folder</option>
+      <option value="{year}-{month}/{date} {time} {title}">A folder per month</option>
+      <option value="{year}/{month}/{date} {title}">Year, then month</option>
+      <option value="{title}/{date} {time}">A folder per title</option>
+      <option value="{category}/{date} {time} {title}">A folder per category</option>
+    </datalist>
+    <label class="check"><input type="checkbox" id="export_extras">Save a folder per report with run.json and run.log too</label>
+    <p class="hint" id="exporthint"></p>
+  </div>
+</div>
+</div>
+
+<script>
+const $ = (q, el = document) => el.querySelector(q), $$ = (q, el = document) => [...el.querySelectorAll(q)];
+const api = (path, body) => fetch(path, body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Video-Watch': '1'}, body: JSON.stringify(body)}).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+let settings = {}, env = {engines: {}}, polling = null;
+const ENGINE_NAMES = {claude: 'Claude Code', codex: 'Codex', claude_api: 'Claude API', openai_api: 'Other APIs'};
+const CLI = ['claude', 'codex'];
+const providerOf = e => e === 'claude_api' ? 'anthropic' : e === 'openai_api' ? (settings.openai_api_provider || 'openai') : null;
+const preset = () => ((env.providers || {}).presets || {})[settings.openai_api_provider || 'openai'] || {};
+const KEY_HELP = p => p === 'anthropic' ? 'Create a key at console.anthropic.com (Settings, API keys). Usage is billed to that Console account.'
+  : preset().site ? `Create a key at ${preset().site}. Usage is billed to that account.` : '';
+const SIGN_HELP = {
+  claude: 'To sign in: open a terminal (Win+R, type <b>cmd</b>, Enter), run <code>claude auth login</code> and finish in the browser window that opens (a Claude Pro or Max plan, or an Anthropic Console account).',
+  codex: 'To sign in: open a terminal (Win+R, type <b>cmd</b>, Enter), run <code>codex login</code> and sign in with your ChatGPT account in the browser window that opens.'};
+const INSTALL_HELP = {
+  claude: 'Claude Code is not installed. Run the Video Watch installer again and tick it, or install it from docs.claude.com/claude-code.',
+  codex: 'Codex is not installed. Run the Video Watch installer again and tick it, or install Node.js and run <code>npm install -g @openai/codex</code>.'};
+
+/* ---------- entries ---------- */
+function entryCard(e = {}) {
+  const d = document.createElement('div');
+  d.className = 'entry';
+  d.innerHTML = `
+    <div class="entry-head"><span class="n"></span><button class="link rm">Remove</button></div>
+    <label>Video URLs or local file paths, one per line (paste a whole list)</label>
+    <textarea class="urls" rows="2" placeholder="https://www.youtube.com/watch?v=…   (or drop video files onto this card)">${esc(e.urls || '')}</textarea>
+    <div><button class="link up">+ add video files from this computer</button> <span class="hint upst"></span><input type="file" class="file hidden" multiple accept="video/*,audio/*,.mkv,.flv,.ts,.m4v"></div>
+    <label>Instructions (optional)</label>
+    <textarea class="ins" rows="2" placeholder="What should be looked for or answered?">${esc(e.instructions || '')}</textarea>
+    <label class="check comb hidden"><input type="checkbox" class="combine" ${e.combine ? 'checked' : ''}><span>Watch these together as one bundle (one combined analysis). Unticked, each URL is analysed on its own with the same instructions.</span></label>
+    <details ${e.start || e.end || e.engine ? 'open' : ''}><summary>Range and model for this item</summary>
+      <div class="row">
+        <div><label>Start</label><input type="text" class="start" placeholder="0:00" value="${esc(e.start || '')}"></div>
+        <div><label>End</label><input type="text" class="end" placeholder="end" value="${esc(e.end || '')}"></div>
+        <div><label>Model</label><select class="eng"><option value="">Same as settings</option><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="claude_api">Claude API</option><option value="openai_api">Other API (as set in Model)</option></select></div>
+      </div>
+    </details>`;
+  $('.eng', d).value = e.engine || '';
+  $('.rm', d).onclick = () => { d.remove(); if (!$$('.entry').length) addEntry(); renumber(); saveDraft(); };
+  d.addEventListener('input', () => { grow($('.urls', d)); renumber(); saveDraft(); });
+  grow($('.urls', d));
+  const fileIn = $('.file', d);
+  $('.up', d).onclick = () => fileIn.click();
+  fileIn.onchange = () => { uploadFiles(d, [...fileIn.files]); fileIn.value = ''; };
+  d.addEventListener('dragover', ev => { if ([...ev.dataTransfer.types].includes('Files')) { ev.preventDefault(); d.classList.add('drop'); } });
+  d.addEventListener('dragleave', ev => { if (!d.contains(ev.relatedTarget)) d.classList.remove('drop'); });
+  d.addEventListener('drop', ev => { if (!ev.dataTransfer.files.length) return; ev.preventDefault(); d.classList.remove('drop'); uploadFiles(d, [...ev.dataTransfer.files]); });
+  $('#entries').appendChild(d);
+  renumber();
+}
+const addEntry = e => entryCard(e);
+// The window cannot pass on a local file's path, so the file is sent to the app, which keeps a copy to watch.
+async function uploadFiles(d, files) {
+  const st = $('.upst', d), add = $('.up', d);
+  add.disabled = true;
+  for (const [i, f] of files.entries()) {
+    try {
+      const r = await new Promise((ok, bad) => {
+        const x = new XMLHttpRequest();
+        x.open('POST', '/api/upload?name=' + encodeURIComponent(f.name));
+        x.setRequestHeader('X-Video-Watch', '1');
+        x.upload.onprogress = e => { if (e.lengthComputable) st.textContent = `Adding ${f.name}${files.length > 1 ? ` (${i + 1} of ${files.length})` : ''}: ${Math.round(100 * e.loaded / e.total)}%`; };
+        x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch (_) {} x.status === 200 ? ok(j) : bad(new Error(j.error || x.statusText)); };
+        x.onerror = () => bad(new Error('the app did not answer'));
+        x.send(f);
+      });
+      const t = $('.urls', d);
+      t.value = (t.value.trim() ? t.value.trim() + '\n' : '') + r.path;
+      t.dispatchEvent(new Event('input', {bubbles: true}));
+      st.textContent = `Added ${files.length > 1 ? files.length + ' files' : f.name}.`;
+    } catch (e) { st.textContent = `Could not add ${f.name}: ${e.message}`; }
+  }
+  add.disabled = false;
+  st.textContent += ' The app watches its own copy, removed after the run unless "Keep downloaded video files" is on.';
+}
+// One per line; a line holding several links (pasted with spaces or commas) is split, and repeats are dropped.
+const urlsOf = d => [...new Set($('.urls', d).value.split('\n').flatMap(l => { l = l.trim(); const m = l.match(/https?:\/\/[^\s,;]+/g); return m && m.length > 1 || (m && l !== m[0] && /^https?:/.test(l)) ? m : [l]; }).filter(Boolean))];
+const grow = t => { t.rows = Math.max(2, Math.min(24, t.value.split('\n').length + 1)); };
+function readEntries() {
+  return $$('.entry').map(d => ({urls: urlsOf(d), instructions: $('.ins', d).value, combine: $('.combine', d).checked,
+    start: $('.start', d).value, end: $('.end', d).value, engine: $('.eng', d).value}));
+}
+function renumber() {
+  let analyses = 0;
+  $$('.entry').forEach((d, i) => {
+    const n = urlsOf(d).length;
+    $('.n', d).textContent = `Item ${i + 1}` + (n > 1 ? ` · ${n} videos` : '');
+    $('.comb', d).classList.toggle('hidden', n < 2);
+    analyses += n > 1 && !$('.combine', d).checked ? n : Math.min(n, 1);
+  });
+  $('#runhint').textContent = analyses ? `${analyses} analys${analyses === 1 ? 'is' : 'es'} with ${ENGINE_NAMES[settings.engine] || ''}` : '';
+}
+function saveDraft() {
+  try { localStorage.setItem('vw-draft', JSON.stringify({title: $('#title').value, entries: readEntries().map(e => ({...e, urls: e.urls.join('\n')}))})); } catch (_) {}
+}
+function loadDraft() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem('vw-draft')); } catch (_) {}
+  $('#title').value = d?.title || '';
+  (d?.entries?.length ? d.entries : [{}]).forEach(addEntry);
+}
+
+/* ---------- settings ---------- */
+function showSettings() {
+  for (const [k, v] of Object.entries(settings)) {
+    const radios = $$(`input[type=radio][name=${k}]`);
+    if (radios.length) { radios.forEach(r => r.checked = r.value === v); continue; }
+    const el = document.getElementById(k);
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
+  }
+  reveal();
+}
+function reveal() {
+  $$('[data-mode]').forEach(el => el.classList.toggle('hidden', !el.dataset.mode.split(' ').includes(settings.mode)));
+  $$('[data-engine]').forEach(el => el.classList.toggle('hidden', el.dataset.engine !== settings.engine));
+  const e = settings.engine, v = env.engines[e];
+  if (CLI.includes(e)) $('#enginehint').textContent = v ? `Using ${v}` + (env.signed_in?.[e] ? ' · signed in' : '') : `${ENGINE_NAMES[e]} was not found on this computer.`;
+  else { const k = (env.keys || {})[providerOf(e)] || {}; $('#enginehint').textContent = k.keyless ? 'Runs on this computer: no key needed.' : k.set ? `Using key ${k.hint}` : 'No key yet: add one below.'; }
+  providerHint();
+  signinBanner();
+  renumber();
+}
+function signinBanner() {
+  const e = settings.engine, b = $('#signin');
+  let h = '';
+  if (CLI.includes(e) && !env.engines[e]) h = `${INSTALL_HELP[e]} <button class="link" data-recheck>check again</button>`;
+  else if (CLI.includes(e) && env.signed_in?.[e] === false) h = `<b>${ENGINE_NAMES[e]} is not signed in</b>, so it cannot watch yet. ${SIGN_HELP[e]}<div style="margin-top:8px"><button data-signin="${e}">Open a terminal to sign in</button> <button data-recheck>Check again</button></div>`;
+  b.innerHTML = h; b.classList.toggle('hidden', !h); b.classList.toggle('bad', !!h);
+  $$('[data-signin]', b).forEach(x => x.onclick = () => api('/api/signin', {engine: x.dataset.signin}).catch(err => alert(err.message)));
+  $$('[data-recheck]', b).forEach(x => x.onclick = recheck);
+}
+async function recheck() {
+  $$('[data-recheck]').forEach(x => { x.disabled = true; x.textContent = 'checking…'; });
+  try { env = (await api('/api/recheck', {})).env; } catch (err) { alert(err.message); }
+  showEnv(); fillModels(); keyBoxes(); reveal();
+}
+function showEnv() {
+  const eng = CLI.map(k => !env.engines[k] ? `<b class="no">${ENGINE_NAMES[k]} missing</b>` : env.signed_in?.[k] === false ? `<b class="no">${ENGINE_NAMES[k]} not signed in</b>` : `${ENGINE_NAMES[k]} ✓`);
+  const names = {anthropic: 'Claude API', ...Object.fromEntries(Object.entries((env.providers || {}).presets || {}).map(([k, v]) => [k, v.name]))};
+  const keys = Object.entries(env.keys || {}).filter(([p, k]) => k.set && !k.keyless).map(([p]) => `${names[p] || p} key ✓`);
+  const tools = Object.entries(env.tools).map(([k, v]) => v ? `${k} ✓` : `<b class="no">${k} missing</b>`);
+  $('#env').innerHTML = [...eng, ...keys, ...tools].join(' · ');
+}
+function providerHint() {
+  const p = preset(), el = $('#providerhint');
+  if (!el) return;
+  el.innerHTML = `<b>${esc(p.name || '')}</b>: ${esc(p.limits || '')}<br><span class="hint">Defaults: ${p.images ? `up to ${p.images} images per request` : 'text only'}${p.max_tokens ? `, replies up to ${p.max_tokens.toLocaleString()} tokens` : ''}. Limits change with each model; check the provider's own documentation.</span>`;
+  $('#openai_api_base').placeholder = p.base || 'https://your-service/v1';
+  $('#openai_api_images').placeholder = p.images || 'model default';
+  $('#openai_api_max_tokens').placeholder = p.max_tokens || 'provider default';
+  $('#notsupported').textContent = (env.providers || {}).not_supported || '';
+}
+function fillProviders() {
+  const sel = $('#openai_api_provider'), ps = (env.providers || {}).presets || {};
+  sel.innerHTML = Object.entries(ps).map(([k, v]) => `<option value="${k}">${esc(v.name)}</option>`).join('');
+  sel.value = settings.openai_api_provider || 'openai';
+  const codexList = ((env.models || {}).openai_api || {}).list || [];
+  if (sel.value !== 'openai' && env.models?.openai_api) env.models.openai_api.list = [];
+  sel.onchange = () => {   // runs before the card saves the setting: a model name rarely carries over between providers
+    settings.openai_api_provider = sel.value;
+    settings.openai_api_model = ''; settings.openai_api_base = '';
+    $('#openai_api_base').value = '';
+    env.models.openai_api.list = sel.value === 'openai' ? codexList : [];
+    fillModels(); keyBoxes(); providerHint();
+  };
+}
+function keyBoxes() {
+  $$('.keybox').forEach(box => {
+    if (box.id === 'otherkey') box.dataset.provider = providerOf('openai_api');
+    const p = box.dataset.provider, eng = box.dataset.engineFor, k = (env.keys || {})[p] || {};
+    if (k.keyless) {
+      box.innerHTML = `<p class="hint" style="margin-top:10px">No key needed: it runs on this computer. Start it before watching.</p><p style="margin:6px 0 0"><button class="link keytest">check the connection</button> · <button class="link keymodels">load my models</button></p><p class="hint keyout"></p>`;
+    } else
+    box.innerHTML = `<label>API key</label>` + (k.set ? `<p class="hint" style="margin:0 0 6px">${k.source === 'saved' ? 'Saved in this app, encrypted for your Windows account' : `Taken from the ${esc(k.env)} environment variable`}: <b>${esc(k.hint)}</b></p>` : '')
+      + `<div class="row" style="align-items:end"><div><input type="password" class="keyin" autocomplete="off" spellcheck="false" placeholder="${k.set ? 'paste a new key to replace it' : 'paste your API key'}"></div><div style="flex:none"><button class="keysave">Save key</button></div></div>`
+      + `<p style="margin:6px 0 0"><button class="link keytest"${k.set ? '' : ' disabled'}>check the key</button> · <button class="link keymodels"${k.set ? '' : ' disabled'}>load my models</button>${k.source === 'saved' ? ' · <button class="link danger keyrm">remove the key</button>' : ''}</p><p class="hint keyout"></p>`
+      + `<p class="hint">${KEY_HELP(p)} Checking the key and loading models cost nothing. Each provider keeps its own key. The key is sent only to ${p === 'anthropic' ? 'Anthropic' : 'that provider\'s address'}, never shown again here.</p>`;
+    const out = $('.keyout', box), inp = $('.keyin', box);
+    const save = async () => {
+      out.textContent = 'Saving…';
+      try { env.keys = (await api('/api/key', {provider: p, key: inp.value})).keys; inp.value = ''; keyBoxes(); showEnv(); reveal(); $('.keyout', box).textContent = 'Saved. Checking it…'; $('.keytest', box).click(); }
+      catch (err) { out.textContent = '✗ ' + err.message; }
+    };
+    if (inp) { $('.keysave', box).onclick = save; inp.onkeydown = ev => { if (ev.key === 'Enter') save(); }; }
+    $('.keytest', box).onclick = async () => {
+      out.textContent = 'Checking…';
+      try { clearTimeout(saveTimer); settings = (await api('/api/settings', settings)).settings; const r = await api('/api/keytest', {engine: eng}); out.textContent = (r.ok ? '✓ ' : '✗ ') + r.message; }
+      catch (err) { out.textContent = '✗ ' + err.message; }
+    };
+    $('.keymodels', box).onclick = async () => {
+      out.textContent = 'Asking for the list…';
+      try { clearTimeout(saveTimer); settings = (await api('/api/settings', settings)).settings; const r = await api('/api/apimodels', {engine: eng}); env.models[eng].list = r.models; fillModels(); out.textContent = `✓ ${r.models.length} models listed in the model menu above.`; }
+      catch (err) { out.textContent = '✗ ' + err.message; }
+    };
+    const rm = $('.keyrm', box);
+    if (rm) rm.onclick = async () => { if (!confirm('Remove the saved key from this app?')) return; env.keys = (await api('/api/key', {provider: p, remove: true})).keys; keyBoxes(); showEnv(); reveal(); };
+  });
+}
+let saveTimer = null;
+function onSetting(ev) {
+  const el = ev.target, key = el.name || el.id;
+  if (!(key in settings)) return;
+  settings[key] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value;
+  reveal();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try { settings = (await api('/api/settings', settings)).settings; $('#saved').textContent = 'Settings saved.'; }
+    catch (e) { $('#saved').textContent = 'Could not save settings: ' + e.message; }
+  }, 400);
+}
+
+/* ---------- run ---------- */
+function showJob(j) {
+  if (!j || j.status === 'idle') return;
+  $('#jobcard').classList.remove('hidden');
+  $('#units').innerHTML = (j.units || []).map(u => {
+    const run = u.status === 'running';
+    const pct = run ? Math.max(3, Math.min(97, 100 * u.elapsed / (u.elapsed + u.remaining + 1))) : 0;
+    const eta = run ? ` · ${clock(u.elapsed)} elapsed · ${u.over ? 'taking longer than estimated' : 'about ' + rough(u.remaining) + ' left'}` : u.status === 'queued' ? ` · about ${rough(u.remaining)} once started` : u.elapsed != null ? ` · took ${clock(u.elapsed)}` : '';
+    const stages = (u.stages || []).map(s => s.seconds != null ? `${esc(s.name)} ${Math.round(s.seconds)}s` : `<b>${esc(s.name)}…</b>`).join(' → ');
+    return `<li><span class="st ${u.status}">${u.status}</span><span class="lb">${esc(u.label)}<br><span class="dt">${esc(ENGINE_NAMES[u.engine] || '')}${eta}${u.detail ? ' · ' + esc(u.detail) : ''}</span>${run ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}${stages ? `<br><span class="dt">${stages}</span>` : ''}</span></li>`;
+  }).join('');
+  const nDone = (j.units || []).filter(u => !['queued', 'running'].includes(u.status)).length;
+  $('#overall').innerHTML = j.elapsed == null ? '' : j.status === 'running'
+    ? (nDone === j.units.length && j.phase ? `All <b>${nDone}</b> items watched · <b>${clock(j.elapsed)}</b> elapsed · now <b>${esc(j.phase)}</b>…`
+    : `<b>${nDone} of ${j.units.length}</b> items finished · <b>${clock(j.elapsed)}</b> elapsed · about <b>${rough(j.remaining)}</b> left <span class="hint">(${j.estimate_basis ? 'estimate from ' + j.estimate_basis + (j.estimate_basis > 1 ? ' earlier analyses' : ' earlier analysis') : 'rough estimate; improves as you use it'})</span>`)
+    : `<b>${nDone} of ${j.units.length}</b> items finished in <b>${clock(j.elapsed)}</b>`;
+  const log = $('#log'), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  log.textContent = (j.log || []).join('\n');
+  if (atEnd) log.scrollTop = log.scrollHeight;
+  const running = j.status === 'running';
+  $('#cancel').classList.toggle('hidden', !running);
+  $('#run').disabled = running;
+  let r = '';
+  if (j.report && (j.reports || []).length > 1) r = `<div class="banner">${j.status === 'cancelled' ? 'Stopped. Partial reports' : j.reports.length + ' reports ready'}${j.failed ? ` (${j.failed} item${j.failed > 1 ? 's' : ''} failed)` : ''}:<br>` + j.reports.map(x => `<a href="${x.url}" target="_blank">${esc(x.title || 'Untitled')}</a> · <button class="link" onclick="openFolder('${x.id}')">folder</button>${x.exported ? ' · copy saved' : ''}`).join('<br>') + `<br><span class="hint">Progress log saved as run.log in the first report's folder</span></div>`;
+  else if (j.report) r = `<div class="banner">${j.status === 'cancelled' ? 'Stopped. Partial report' : 'Report ready'}${j.failed ? ` (${j.failed} item${j.failed > 1 ? 's' : ''} failed)` : ''}: <a href="${j.report}" target="_blank">open report</a> · <button class="link" onclick="openFolder('${j.id}')">open folder</button><br><span class="hint">${esc(j.path)}<br>Progress log saved next to it as run.log${j.exported ? '<br>Copy saved: ' + esc(j.exported) : ''}</span></div>`;
+  else if (j.status === 'error') r = `<div class="banner bad">Run failed: ${esc(j.error)}</div>`;
+  $('#result').innerHTML = r;
+  if (!running && polling) { clearInterval(polling); polling = null; refreshRuns(); }
+}
+const clock = s => `${Math.floor(s / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`;
+const rough = s => s < 50 ? `${Math.max(10, Math.round(s / 10) * 10)} sec` : `${Math.max(1, Math.round(s / 60))} min`;
+const poll = () => api('/api/job').then(showJob).catch(() => {});
+function startPolling() { if (!polling) polling = setInterval(poll, 1000); poll(); }
+const openFolder = id => api('/api/open', {id}).catch(e => alert(e.message));
+const size = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.ceil(b / 1024) + ' KB';
+async function refreshRuns() {
+  const s = await api('/api/state');
+  $('#runs').innerHTML = s.runs.length ? s.runs.map(r => `<li><span><a href="/runs/${r.id}/report.html" target="_blank">${esc(r.title || 'Untitled run')}</a> <span class="hint">${r.started.replace('T', ' ')} · ${r.overview ? 'overview of ' + r.items + ' videos' : r.items + ' item' + (r.items > 1 ? 's' : '') + (r.summary ? ' + combined summary' : '')} · ${esc(r.mode)} · ${size(r.size)}${r.errors ? ' · ' + r.errors + ' failed' : ''}${r.exported ? ' · copy saved' : ''}</span></span><span class="acts"><button class="link" onclick="openFolder('${r.id}')">folder</button>${s.settings.export_dir ? ` <button class="link" onclick="saveCopy('${r.id}')">save copy</button>` : ''} <button class="link danger" onclick="delRun('${r.id}')">delete</button></span></li>`).join('') : '<li class="hint">None yet.</li>';
+  const st = s.storage;
+  $('#storeline').textContent = `${st.runs} run${st.runs === 1 ? '' : 's'} using ${size(st.bytes)} on this computer` + (st.work_bytes ? `, of which ${size(st.work_bytes)} is working files that can be deleted without losing any report.` : '.');
+  $('#freework').classList.toggle('hidden', !st.work_bytes);
+  lib = s.library || []; showLibrary();
+  return s;
+}
+let lib = [], groupBy = 'date';
+try { groupBy = localStorage.getItem('vw-group') || 'date'; } catch (_) {}
+function showLibrary() {
+  $$('.grp button').forEach(b => b.classList.toggle('on', b.dataset.group === groupBy));
+  const none = lib.filter(v => !v.category).length, cats = new Set(lib.filter(v => v.category).map(v => v.category)).size;
+  $('#libline').innerHTML = lib.length ? `${lib.length} video${lib.length === 1 ? '' : 's'} watched, in ${cats} categor${cats === 1 ? 'y' : 'ies'}.` + (none ? ` ${none} not filed yet: <button class="link" id="catfill">let the model categorise them</button>` : '') + ' Click a category to change it.' : 'Videos you watch are listed here, filed by date and by a category the model assigns.';
+  const groups = new Map();
+  for (const v of lib) { const k = groupBy === 'date' ? v.date : (v.category || 'Uncategorised'); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(v); }
+  const keys = [...groups.keys()];
+  if (groupBy === 'category') keys.sort((a, b) => (a === 'Uncategorised') - (b === 'Uncategorised') || a.localeCompare(b));
+  $('#library').innerHTML = keys.map(k => `<h3>${esc(k)} · ${groups.get(k).length}</h3><ul class="runs">` + groups.get(k).map(v =>
+    `<li><span><a href="/runs/${v.run}/report.html" target="_blank">${esc(v.title)}</a> <span class="hint">${clock(v.duration)}${groupBy === 'category' ? ' · ' + v.date : ''}${v.failed ? ' · failed' : ''}${/^https?:/.test(v.source) ? ` · <a href="${esc(v.source)}" target="_blank">source</a>` : ''}</span></span><span class="acts"><button class="chip" data-run="${v.run}" data-unit="${v.unit}" data-cat="${esc(v.category)}">${esc(v.category || 'Uncategorised')}</button></span></li>`).join('') + '</ul>').join('');
+  $$('#library .chip').forEach(b => b.onclick = async () => {
+    const name = prompt('Category for this video:', b.dataset.cat);
+    if (name === null) return;
+    try { await api('/api/category', {id: b.dataset.run, unit: +b.dataset.unit, category: name}); await refreshRuns(); } catch (e) { alert(e.message); }
+  });
+  const fill = $('#catfill');
+  if (fill) fill.onclick = async () => { fill.disabled = true; fill.textContent = 'asking the model…'; try { await api('/api/categorise', {}); } catch (e) { alert(e.message); } await refreshRuns(); };
+}
+$$('.grp button').forEach(b => b.onclick = () => { groupBy = b.dataset.group; try { localStorage.setItem('vw-group', groupBy); } catch (_) {} showLibrary(); });
+async function remove(body, question) {
+  if (!confirm(question)) return;
+  try { const r = await api('/api/delete', body); await refreshRuns(); $('#storeline').textContent += ` Freed ${size(r.freed)}.`; }
+  catch (e) { alert(e.message); }
+}
+const delRun = id => remove({ids: [id]}, 'Delete this report from this computer? This cannot be undone. A copy saved to your export folder is not touched.');
+const saveCopy = id => api('/api/export', {id}).then(r => { alert('Saved to ' + r.path); refreshRuns(); }).catch(e => alert(e.message));
+$('#freework').onclick = () => remove({everything: true, what: 'work'}, 'Delete the working files (frames, audio, kept videos) of every run? The reports themselves stay.');
+$('#delall').onclick = () => remove({everything: true}, 'Delete ALL reports from this computer? This cannot be undone. Copies saved to your export folder are not touched.');
+$('#openruns').onclick = () => api('/api/open', {root: true}).catch(e => alert(e.message));
+function exportHint() {
+  const dir = $('#export_dir').value.trim(), el = $('#exporthint');
+  if (!dir) { el.textContent = 'Off. Point this at a folder inside Google Drive (or OneDrive, Dropbox) and every report syncs there.'; return; }
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const t = {year: d.getFullYear(), month: p(d.getMonth() + 1), day: p(d.getDate()), date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, time: p(d.getHours()) + p(d.getMinutes()), title: 'Video title', category: 'Category', id: 'run-id'};
+  let rel = $('#export_layout').value || '{date} {time} {title}';
+  for (const [k, v] of Object.entries(t)) rel = rel.split(`{${k}}`).join(v);
+  rel = rel.split(/[\\/]+/).filter(Boolean).join('\\');
+  el.innerHTML = `Example: <b>${esc(dir.replace(/[\\/]+$/, ''))}\\${esc(rel)}${$('#export_extras').checked ? '\\report.html' : '.html'}</b><br>Words you can use: {year} {month} {day} {date} {time} {title} {category} {id}. A / starts a subfolder. <button class="link" id="openexport">open folder</button>`;
+  $('#openexport').onclick = () => api('/api/open', {export: true}).catch(e => alert(e.message));
+}
+document.addEventListener('input', exportHint); document.addEventListener('change', exportHint);
+
+$('#add').onclick = () => { addEntry(); saveDraft(); };
+$('#title').oninput = saveDraft;
+$('#quit').onclick = async () => { await api('/api/quit', {}).catch(() => {}); document.body.innerHTML = '<p style="padding:40px">Video Watch has stopped. You can close this window.</p>'; window.close(); };
+$('#cancel').onclick = () => api('/api/cancel', {});
+$('#run').onclick = async () => {
+  const err = $('#formerr');
+  err.classList.add('hidden');
+  try {
+    clearTimeout(saveTimer);
+    settings = (await api('/api/settings', settings)).settings;
+    await api('/api/run', {title: $('#title').value, entries: readEntries()});
+    startPolling();
+  } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+};
+function fillModels() {
+  $$('.modelpick').forEach(sel => {
+    const m = (env.models || {})[sel.dataset.engineModels] || {default: '', list: []};
+    const saved = settings[sel.id] || '';
+    const api = sel.dataset.engineModels.endsWith('_api');
+    const first = api ? (m.default ? `Default (${m.default})` : 'Choose a model…') : 'CLI default' + (m.default ? ` (${m.default})` : '');
+    const opts = [['', first], ...m.list.map(x => [x.id, x.name === x.id ? x.id : `${x.name} · ${x.id}`])];
+    if (saved && !opts.some(o => o[0] === saved)) opts.push([saved, saved]);
+    opts.push(['__other', 'Other… (type a model name)']);
+    sel.innerHTML = opts.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
+    sel.value = saved;
+    sel.onchange = () => {   // runs before the card's own change handler saves the value
+      if (sel.value !== '__other') return;
+      const name = (prompt('Model name, exactly as the CLI accepts it:') || '').trim();
+      if (name && ![...sel.options].some(o => o.value === name)) sel.insertBefore(new Option(name, name), sel.lastElementChild);
+      sel.value = name || settings[sel.id] || '';
+    };
+  });
+}
+function poolRead() { return ($('#agent_pool').value || '').split(/[,\n]+/).map(x => x.trim()).filter(Boolean).map(x => { const i = x.indexOf(':'); return i < 0 ? [x, ''] : [x.slice(0, i), x.slice(i + 1)]; }).filter(p => ENGINE_NAMES[p[0]]); }
+function poolWrite(pool) {
+  const el = $('#agent_pool');
+  el.value = pool.map(([e, m]) => m ? `${e}:${m}` : e).join(', ');
+  el.dispatchEvent(new Event('change', {bubbles: true}));
+  poolShow();
+}
+function poolShow() {
+  const pool = poolRead();
+  $('#poolrows').innerHTML = pool.map(([e, m], i) => {
+    const list = ((env.models || {})[e] || {list: []}).list, known = !m || list.some(x => x.id === m);
+    return `<div class="row" style="align-items:end;margin-bottom:6px"><div><select data-i="${i}" data-k="0">${Object.entries(ENGINE_NAMES).map(([k, n]) => `<option value="${k}"${k === e ? ' selected' : ''}>${n}</option>`).join('')}</select></div>` +
+      `<div><select data-i="${i}" data-k="1"><option value="">that CLI's default model</option>${list.map(x => `<option value="${esc(x.id)}"${x.id === m ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}${known ? '' : `<option selected value="${esc(m)}">${esc(m)}</option>`}<option value="__other">Other…</option></select></div>` +
+      `<div style="flex:none"><button class="link" data-rm="${i}">remove</button></div></div>`;
+  }).join('');
+  $$('#poolrows select').forEach(sel => sel.onchange = ev => {
+    ev.stopPropagation();
+    const p = poolRead(), i = +sel.dataset.i, k = +sel.dataset.k;
+    let v = sel.value;
+    if (v === '__other') v = (prompt('Model name, exactly as the CLI accepts it:') || '').trim();
+    p[i][k] = v;
+    if (k === 0) p[i][1] = '';
+    poolWrite(p);
+  });
+  $$('#poolrows [data-rm]').forEach(b => b.onclick = () => { const p = poolRead(); p.splice(+b.dataset.rm, 1); poolWrite(p); });
+  $('#poolhint').textContent = pool.length ? (pool.length > 1 ? 'The slices are dealt out to these in turn: slice 1 to the first, slice 2 to the second, and so on. ' : 'Every sub-agent uses this. ') + 'The main model above still writes the report.'
+    : 'Empty: the sub-agents use the same engine and model as above. Add types to use a cheaper model, or to mix Claude Code and Codex.';
+}
+$('#pooladd').onclick = () => poolWrite([...poolRead(), [settings.engine === 'claude' ? 'claude' : 'codex', '']]);
+$('#authgo').onclick = async () => {
+  const out = $('#authout'), b = $('#authgo');
+  b.disabled = true; out.textContent = 'Checking…';
+  try {
+    clearTimeout(saveTimer); settings = (await api('/api/settings', settings)).settings;
+    const r = await api('/api/authcheck', {url: $('#authurl').value});
+    out.textContent = (r.ok ? '✓ ' : '✗ ') + r.message;
+  } catch (e) { out.textContent = '✗ ' + e.message; }
+  b.disabled = false;
+};
+function styleHint() {
+  const on = $('#report_style').value === 'layered';
+  $('#layeredopts').classList.toggle('hidden', !on);
+  $('#stylehint').textContent = on
+    ? 'Each video is written up on its own at four depths, sized to how much it holds, with its key frames re-captured sharp. A bundle of videos also gets chapters organised around your question, each drawing on every video that covers it. In the report, slide the whole report between gist and deep dive, set one section\'s depth on its own, or press Go deeper on a section for more (when the report is opened from this app). Costs about one extra model call per video and per chapter.'
+    : 'One model reply per item: quicker and cheaper, but a long video or a bundle gets compressed.';
+}
+document.addEventListener('input', styleHint); document.addEventListener('change', styleHint);
+function splitHint() {
+  const m = $('#report_split').value;
+  $('#report_split_rule').classList.toggle('hidden', m !== 'custom');
+  $('#splithint').textContent = {
+    auto: 'After watching, the model you selected takes a quick look at what each video was about and decides which belong in the same report. Unrelated videos get their own.',
+    video: 'Every video gets its own report.',
+    single: 'All videos of the run go into one report.',
+    custom: 'The model divides the videos into reports following the rule you write here. With no rule, they are grouped by category.'}[m]
+    + ' Videos you ticked to watch together as a bundle always stay in one report. Each report is its own entry under Past reports and its own copy in your export folder.';
+}
+document.addEventListener('input', splitHint); document.addEventListener('change', splitHint);
+function agentHint() {
+  const size = +$('#agent_chunk').value || 40, at = Math.min(+$('#agent_parallel').value || 4, 12), mode = $('#agents').value;
+  $('#agenthint').textContent = mode === 'auto' ? `Automatic: up to ${Math.floor(size * 1.5)} frames one agent does everything; above that the frames are split across sub-agents of about ${size} frames each, ${at} at a time, which is several times faster on long videos.`
+    : mode === 'single' ? 'One model call opens every frame itself. Simplest, but slow when there are many frames.'
+    : `Frames are always split across at least two sub-agents (about ${size} frames each, ${at} at a time).`;
+}
+document.addEventListener('input', agentHint); document.addEventListener('change', agentHint);
+function capHint() {
+  const step = (+$('#interval_value').value || 0) * ($('#interval_unit').value === 'minutes' ? 60 : 1);
+  const limit = +$('#frame_limit').value || 400, own = +$('#max_frames').value || 0;
+  const cap = own ? Math.min(own, limit) : limit, reach = step * cap;
+  $('#autohint').innerHTML = own ? (own > limit ? `The cap is above the safety limit, so <b>${limit}</b> applies.` : '')
+    : `Automatic: each video gets as many frames as this mode asks for, up to the safety limit of <b>${limit}</b>. More frames means a slower and costlier analysis.`;
+  const span = reach >= 3600 ? (reach / 3600).toFixed(1) + ' h' : reach >= 60 ? Math.round(reach / 60) + ' min' : Math.round(reach) + ' s';
+  $('#caphint').innerHTML = step ? `With ${own && own <= limit ? 'the frame cap' : 'the safety limit'} at <b>${cap}</b>, this interval holds for videos up to <b>${span}</b>. Longer videos are thinned to ${cap} evenly spaced frames; ${own && own <= limit ? 'raise the cap below, or set it to 0,' : 'raise the safety limit below'} to avoid that.` : '';
+}
+document.addEventListener('input', capHint); document.addEventListener('change', capHint); setInterval(capHint, 1500);
+$$('.card').forEach(c => { c.addEventListener('change', onSetting); c.addEventListener('input', ev => { if (ev.target.type !== 'radio' && ev.target.type !== 'checkbox') onSetting(ev); }); });
+
+setInterval(() => fetch('/api/ping').catch(() => {}), 4000);
+addEventListener('pagehide', () => fetch('/api/bye', {method: 'POST', keepalive: true, headers: {'Content-Type': 'application/json', 'X-Video-Watch': '1'}, body: '{}'}));
+
+(async () => {
+  const s = await refreshRuns();
+  settings = s.settings; env = s.env;
+  $('#hardcap').textContent = env.max_limit;
+  showEnv();
+  fillProviders();
+  keyBoxes();
+  $('#whisperhint').textContent = env.transcription.length ? `Configured: ${env.transcription.join(', ')} (keys from ~/.config/watch/.env).` : 'No transcription key is configured in ~/.config/watch/.env, so videos without captions will be frames only.';
+  loadDraft();
+  fillModels();
+  showSettings();
+  agentHint(); poolShow(); splitHint(); styleHint();
+  exportHint(); capHint();
+  const j = await api('/api/job');
+  showJob(j);
+  if (j.status === 'running') startPolling();
+})();
+</script>
+</body>
+</html>
