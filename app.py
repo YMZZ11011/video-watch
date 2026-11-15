@@ -238,6 +238,7 @@ DEFAULTS = {
     "report_split": "auto", "report_split_rule": "",   # how a run with several videos is divided into reports
     "batch_summary": True,   # the orchestrator writes a combined summary before the analyses of a batch
     "retry_downloads": True,   # retry a failed download when the cause is temporary (rate limit, network)
+    "playlist_limit": 30,      # most videos taken from one playlist or multi-part video
     "report_style": "layered",   # layered: chapters at four depths with a slider; standard: one written analysis
     "report_depth": "detailed",  # the depth a layered report opens at
     "allow_background": True,    # the model may explain theory the videos assume, marked as not from the videos
@@ -264,7 +265,7 @@ LIMITS = {
     "frame_limit": (1, MAX_LIMIT), "report_image_width": (64, 1568), "report_image_quality": (10, 100),
     "resolution": (128, 1568), "dynamic_overview": (0, 60), "dynamic_budget": (1, MAX_LIMIT),
     "dynamic_rounds": (1, 10), "max_turns": (5, 300), "timeout_min": (1, 240), "parallel": (1, 4),
-    "keep_runs": (0, 100000), "agent_chunk": (5, 200), "agent_parallel": (1, 12),
+    "keep_runs": (0, 100000), "agent_chunk": (5, 200), "agent_parallel": (1, 12), "playlist_limit": (1, 500),
     "openai_api_images": (0, 100), "openai_api_max_tokens": (0, 200000),
 }
 
@@ -682,7 +683,7 @@ def plan_units(entries: list[dict]) -> list[dict]:
                 "end": (e.get("end") or "").strip() or None,
                 "engine": e.get("engine") if e.get("engine") in llm.ENGINES else None}
         if e.get("combine") and len(urls) > 1:
-            units.append({**base, "urls": urls})
+            units.append({**base, "urls": urls, "bundle": True})
         else:
             units += [{**base, "urls": [u]} for u in urls]
     return units
@@ -881,6 +882,72 @@ def go_deeper(run_id: str, ui: int, key: str, focus: str) -> str:
     return clean
 
 
+# Links that may hold several videos: YouTube playlists (no single video named), channels' video tabs,
+# Bilibili videos (which can have many parts), Bilibili collections and favourites.
+LISTY = re.compile(r"[?&]list=|/playlist\b|/channel/|/@[^/?]+/(videos|streams)|/c/[^/]+/videos|bilibili\.com/video/|"
+                   r"space\.bilibili\.com|/medialist/|/favlist|/series|/collection", re.I)
+ONE_VIDEO = re.compile(r"[?&]v=|youtu\.be/|/shorts/|[?&]p=\d+", re.I)   # a link that names one video or one part
+
+
+def expand_links(units: list[dict], s: dict, log) -> list[dict]:
+    """Replace playlist and multi-part links with their videos (up to the playlist_limit setting each).
+    An item that was not a bundle becomes one item per video; a bundle keeps them all together.
+    A list with nothing watchable becomes a failure on its item, with the reason."""
+    from download import cookie_args
+    cands = sorted({u for unit in units for u in unit["urls"] if re.match(r"https?://", u) and LISTY.search(u) and not ONE_VIDEO.search(u)})
+    if not cands:
+        return units
+    limit = int(s.get("playlist_limit") or 30)
+    log(f"checking {len(cands)} link(s) for playlists and multi-part videos")
+
+    def probe(url: str) -> tuple[str, dict | None, str]:
+        cmd = ["yt-dlp", *cookie_args(s.get("cookies_browser")), "--flat-playlist", "-J", "--no-warnings", url]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return url, None, str(exc)
+        if r.returncode != 0 or not r.stdout.strip():
+            return url, None, ""   # left as it is: the download step reports the reason
+        try:
+            return url, json.loads(r.stdout), ""
+        except ValueError:
+            return url, None, ""
+
+    with ThreadPoolExecutor(6) as ex:
+        found = {u: info for u, info, _ in ex.map(probe, cands)}
+    lists: dict[str, list[str]] = {}
+    for u, info in found.items():
+        if not info or info.get("_type") != "playlist":
+            continue
+        entries = [e.get("url") or e.get("webpage_url") for e in info.get("entries") or [] if isinstance(e, dict)]
+        entries = [e for e in entries if e]
+        name = info.get("title") or u
+        lists[u] = entries[:limit]
+        if not entries:
+            log(f'"{name}" lists no videos that can be watched (they may have been removed or made private): {u}')
+        else:
+            log(f'"{name}": {len(entries)} video(s)' + (f"; taking the first {limit} (Most videos from one list, under "
+                                                         f"Report and run, Advanced)" if len(entries) > limit else ""))
+    if not lists:
+        return units
+    out = []
+    for unit in units:
+        if not any(u in lists for u in unit["urls"]):
+            out.append(unit)
+            continue
+        fails = [{"url": u, "video": 0, "kind": "unavailable", "retryable": False,
+                  "reason": "The playlist lists no videos that can be watched (they may have been removed or made private)."}
+                 for u in unit["urls"] if u in lists and not lists[u]]
+        urls = [v for u in unit["urls"] for v in (lists.get(u, [u]) if u in lists else [u])]
+        if len(unit["urls"]) > 1 or unit.get("bundle"):   # a bundle stays one analysis
+            out.append({**unit, "urls": urls, "prefail": fails})
+        else:
+            out += [{**unit, "urls": [v]} for v in urls] or [{**unit, "urls": [], "prefail": fails}]
+            if urls and fails:
+                out[-1]["prefail"] = fails
+    return out
+
+
 def run_job(run_id: str, title: str, units: list[dict], s: dict) -> None:
     job = jobs[run_id]
     cancel: threading.Event = job["cancel"]
@@ -891,6 +958,20 @@ def run_job(run_id: str, title: str, units: list[dict], s: dict) -> None:
     rdir = RUNS / run_id
     started = datetime.now().isoformat(timespec="seconds")
     s = {**s, "_categories": categories()}   # so the model reuses the library's existing categories
+    try:
+        job["phase"] = "checking links"
+        expanded = expand_links(units, s, log)
+    except Exception as exc:  # noqa: BLE001  (a failed check must not stop the run)
+        log(f"could not check the links for playlists ({exc}); watching them as given")
+        expanded = units
+    if expanded is not units:
+        units = expanded
+        with lock:
+            job["plan"] = units
+            job["units"] = [{"label": u["urls"][0] if len(u["urls"]) == 1 else (f"Bundle of {len(u['urls'])} videos" if u["urls"] else "(no videos)"),
+                             "status": "queued", "detail": "", "engine": u.get("engine") or s["engine"],
+                             "videos": len(u["urls"]), "stages": []} for u in units]
+    job.pop("phase", None)
     results: list[dict | None] = [None] * len(units)
 
     def work(i: int) -> None:

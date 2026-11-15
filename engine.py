@@ -230,6 +230,10 @@ def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage, on_fai
         "failures": [],   # links that could not be watched: url, kind, reason, retryable
     }
     chk = checkpoint_of(cancel)   # waits here while the run is paused; True once it is stopped
+    for rec in unit.get("prefail") or []:   # found while expanding playlists, before this item started
+        res["failures"].append(rec)
+        if on_fail:
+            on_fail(rec)
     try:
         udir.mkdir(parents=True, exist_ok=True)
         videos = res["videos"]

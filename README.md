@@ -134,6 +134,11 @@ this computer can be dropped onto an item or picked with "add video files from t
 app keeps its own copy under `uploads\`, deleted after the run unless "Keep downloaded video files"
 is on (and by "delete working files").
 
+- A playlist, a channel's videos or a multi-part Bilibili video is opened into its videos when the run
+  starts (up to "Most videos from one list", 30 by default, under Report and run, Advanced). Each video
+  becomes its own analysis, or they stay together in a bundle. A link to one part (`?p=5`) or to one
+  video in a playlist (`watch?v=...&list=...`) means just that video. A list with nothing watchable
+  (videos removed or made private) is reported as such.
 - One URL per item: its own instructions.
 - Several URLs in one item, bundle unticked: each is analysed separately with the same instructions.
 - Several URLs, bundle ticked: watched together in one analysis (comparisons, series).

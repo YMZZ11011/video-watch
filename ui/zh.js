@@ -115,7 +115,9 @@ const ZH = {
   'interval': '固定间隔', 'count': '固定数量', 'scene': '场景切换', 'keyframes': '关键帧', 'dynamic': '动态', 'transcript': '仅字幕',
   'taking longer than estimated': '比预计耗时更长', 'the app did not answer': '应用没有响应',
   'Add at least one video URL or file path.': '请至少添加一个视频链接或文件路径。', 'A run is already in progress.': '已有运行在进行中。',
-  'Progress log': '进度日志', 'dismiss': '关闭',
+  'Progress log': '进度日志', 'dismiss': '关闭', 'Most videos from one list': '每个列表最多取的视频数',
+  'A playlist, a channel\'s videos or a multi-part Bilibili video is opened into its videos when the run starts, each watched on its own (or together, in a bundle), up to this many per link. A link to one part (?p=5) or one video in a playlist (watch?v=…&list=…) means just that video.':
+    '播放列表、频道的视频或 B 站多 P 视频会在运行开始时展开成单个视频，各自单独观看（勾选一组一起看时则合在一起），每个链接最多取这么多个。指向某一 P（?p=5）或播放列表中某个视频（watch?v=…&list=…）的链接只看那一个视频。',
   'Retry a failed download automatically when the cause is temporary': '下载失败且原因是暂时性时自动重试',
   'The app reads why a download failed. When the site is limiting downloads or the network dropped, it tries again after a pause (30 s and 90 s for a rate limit). A members-only, private, removed or region-blocked video fails the same way every time, so it is not retried. Either way, a failed link is listed on the run\'s card with the reason and what to do, and the rest of the run carries on.':
     '应用会读取下载失败的原因。如果是网站在限制下载或网络中断，会在暂停后重试（遇到限流时分别等 30 秒和 90 秒）。会员专属、私有、已删除或地区受限的视频每次都会以同样的方式失败，因此不会重试。无论哪种情况，失败的链接都会列在该运行的卡片上，附上原因和处理方法，其余部分照常进行。', 'Pause': '暂停', 'Resume': '继续', 'paused': '已暂停', '+ New topic': '+ 新主题', 'Watch all topics': '全部主题开始观看',

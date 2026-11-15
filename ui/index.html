@@ -286,7 +286,9 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
         <div><label for="parallel">Items at once</label><input type="number" id="parallel" min="1" max="4"></div>
         <div><label for="timeout_min">Timeout per turn (min)</label><input type="number" id="timeout_min" min="1"></div>
         <div><label for="max_turns">Max turns (Claude)</label><input type="number" id="max_turns" min="5"></div>
+        <div><label for="playlist_limit">Most videos from one list</label><input type="number" id="playlist_limit" min="1" max="500"></div>
       </div>
+      <p class="hint">A playlist, a channel's videos or a multi-part Bilibili video is opened into its videos when the run starts, each watched on its own (or together, in a bundle), up to this many per link. A link to one part (?p=5) or one video in a playlist (watch?v=…&amp;list=…) means just that video.</p>
     </details>
     <p class="hint" id="saved" style="margin-top:12px"></p>
   </div>
