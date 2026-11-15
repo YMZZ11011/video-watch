@@ -323,6 +323,9 @@ def with_estimates(j: dict) -> dict:
         left += rem
         units.append(u)
     out = {**public(j), "units": units, "log": j.get("log", [])[-300:]}
+    ctl = j.get("cancel")
+    if getattr(ctl, "limit", None) and j.get("status") == "running":
+        out["limit"] = {k: ctl.limit[k] for k in ("what", "until", "message")}
     if j.get("started_at"):   # time spent paused does not count
         held = j["cancel"].paused_for() if hasattr(j.get("cancel"), "paused_for") else 0
         out["elapsed"] = round((j.get("ended_at") or now) - j["started_at"] - held)
@@ -702,6 +705,16 @@ def log(msg: str, j: dict | None = None) -> None:
             pass
 
 
+def model_call(engine: str, prompt: str, work: Path, s: dict, cancel=None, log=log) -> dict:
+    """llm.run that waits out a usage limit (when the run has a RunControl) and then asks again."""
+    while True:
+        r = llm.run(engine, prompt, work, s, cancel=cancel)
+        if not (r.get("limit") and hasattr(cancel, "wait_limit")):
+            return r
+        if not cancel.wait_limit(r["limit"], llm.label(engine, s), log):
+            raise llm.Cancelled()
+
+
 def plan_reports(done: list[dict], s: dict, title: str, log=log, cancel: threading.Event | None = None) -> list[dict]:
     """Divide a run's analyses into reports: [{"title", "units"}]. An analysis is one video, or one
     bundle the user asked to be watched together; a bundle is never split."""
@@ -745,7 +758,7 @@ def plan_reports(done: list[dict], s: dict, title: str, log=log, cancel: threadi
         tmp.mkdir(parents=True, exist_ok=True)
         if cancel is not None and getattr(cancel, "checkpoint", None) and cancel.checkpoint():
             raise llm.Cancelled()
-        r = llm.run(s["engine"], prompt, tmp, {**s, "max_turns": 5}, cancel=cancel)
+        r = model_call(s["engine"], prompt, tmp, {**s, "max_turns": 5}, cancel=cancel, log=log)
         plan = json.loads(re.search(r"\[.*\]", r.get("text") or "", re.S).group(0))
         seen: set[int] = set()
         groups = []
@@ -813,7 +826,7 @@ def summarise(units: list[dict], s: dict, title: str, work: Path, cancel: thread
     try:
         if cancel is not None and getattr(cancel, "checkpoint", None) and cancel.checkpoint():
             raise llm.Cancelled()
-        r = llm.run(s["engine"], prompt, work, {**s, "max_turns": 5}, cancel=cancel)
+        r = model_call(s["engine"], prompt, work, {**s, "max_turns": 5}, cancel=cancel)
         m = re.search(r"<report>(.*?)(?:</report>|\Z)", r.get("text") or "", re.S)
         out.update(analysis=(m.group(1) if m else r.get("text") or "").strip(), cost=r.get("cost") or 0.0,
                    model=r.get("model") or s.get(f"{s['engine']}_model") or "CLI default")
@@ -1150,6 +1163,12 @@ class Handler(BaseHTTPRequestHandler):
             for rid in ids:
                 if jobs.get(rid, {}).get("status") == "running":
                     stop_run(rid)
+            return self._json({"ok": True})
+        if path == "/api/limit_retry":   # stop waiting for a usage limit and try the model again now
+            j = jobs.get(str(body.get("id") or ""))
+            if j and hasattr(j.get("cancel"), "retry_now"):
+                j["cancel"].retry_now()
+                log("trying the model again now (Retry now)", j)
             return self._json({"ok": True})
         if path == "/api/pause":
             pause_run(str(body.get("id") or ""), bool(body.get("pause", True)))

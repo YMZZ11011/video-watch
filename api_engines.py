@@ -276,7 +276,14 @@ def _claude(prompt: str, images: list[str], s: dict, session: str | None, on_act
     except anthropic.NotFoundError:
         return _fail(session, f'The Claude API does not know the model "{model}" (404). Pick another model.')
     except anthropic.RateLimitError as e:
-        return _fail(session, f"The Claude API rate limit or spending limit was reached (429): {e.message}")
+        out = _fail(session, f"The Claude API rate limit or spending limit was reached (429): {e.message}")
+        try:
+            wait = float(e.response.headers.get("retry-after") or 0)
+        except (TypeError, ValueError, AttributeError):
+            wait = 0
+        if "credit" not in str(e.message).lower():
+            out["limit"] = {"until": time.time() + wait + 5 if wait else None, "message": str(e.message)[:300]}
+        return out
     except anthropic.BadRequestError as e:
         return _fail(session, f"The Claude API refused the request (400): {e.message}")
     except anthropic.APIStatusError as e:

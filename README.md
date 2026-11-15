@@ -261,6 +261,16 @@ model looks at what each video was about and groups related ones), one report pe
 for everything, or Custom (the model follows a rule you write). A bundle watched together is never
 split. Each report is its own entry in Past reports (`<run id>`, `<run id>-02`, ...).
 
+## When a model's usage limit runs out
+
+If Codex, Claude Code or an API answers that its usage limit is used up (or a 429 rate limit), the
+run does not fail. Its model calls wait, while downloads and frame extraction carry on, and the card
+says which model hit its limit and when it will try again. The time comes from the message itself
+("try again in 2 hours 13 minutes", "resets 4am", a reset timestamp); when the message does not say,
+it tries again every 15 minutes. It then resumes by itself. "Retry now" skips the wait, for example
+right after you reset or raise the limit. An empty balance or billing problem is reported as an
+error instead, since it does not come back by itself.
+
 ## Links that cannot be watched
 
 When a download fails, the app reads why from yt-dlp's own message and sorts it: members-only,

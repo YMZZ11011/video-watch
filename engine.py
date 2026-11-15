@@ -283,13 +283,20 @@ def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage, on_fai
         tally = threading.Lock()
 
         def once(prompt: str, frames: list[dict], session: str | None, over: dict | None = None, eng: str = engine) -> dict:
-            if chk():   # a paused run starts no new model call (calls already under way finish)
-                raise llm.Cancelled()
+            model_chk = getattr(cancel, "model_checkpoint", None) or chk
             # Claude opens frames itself and may spend a turn on each; leave room when there are many
             turns = max(int(s.get("max_turns") or 60), len(frames) * 2 + 20)
-            r = llm.run(eng, prompt, udir, {**s, "max_turns": turns, **(over or {})}, images=images_for(frames, eng),
-                        session=session, cancel=cancel,
-                        on_activity=None if over is not None else lambda m: status(f"{llm.ENGINES[engine]}: {m}"))
+            while True:
+                if model_chk():   # a paused run, or one waiting out a usage limit, starts no new model call
+                    raise llm.Cancelled()
+                r = llm.run(eng, prompt, udir, {**s, "max_turns": turns, **(over or {})}, images=images_for(frames, eng),
+                            session=session, cancel=cancel,
+                            on_activity=None if over is not None else lambda m: status(f"{llm.ENGINES[engine]}: {m}"))
+                if not (r.get("limit") and hasattr(cancel, "wait_limit")):
+                    break
+                status(f"{llm.label(eng, s)}: waiting for the usage limit to reset")
+                if not cancel.wait_limit(r["limit"], llm.label(eng, s), log):
+                    raise llm.Cancelled()
             if r.get("truncated"):
                 log(f"warning: {llm.label(eng, s)} cut a reply off at its output limit; raise 'Max output tokens' "
                     "under Model, Other APIs if the provider allows more")

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -45,6 +46,55 @@ _AUTH_WORDS = ("please run /login", "invalid api key", "not logged in", "oauth t
 
 class Cancelled(Exception):
     pass
+
+
+# A model's usage limit (Codex: "You've hit your usage limit ... try again in 2 hours 13 minutes";
+# Claude Code: "Claude AI usage limit reached|1748458800", "5-hour limit reached · resets 4am";
+# APIs: HTTP 429 with retry-after). Billing problems (no credit) are not limits that come back by themselves.
+_LIMIT_WORDS = ("usage limit", "hit your limit", "limit reached", "rate limit", "rate_limit", "too many requests",
+                "429", "try again in", "try again at", "resets ")
+_BILLING_WORDS = ("credit balance", "insufficient_quota", "billing", "payment required", "purchase credits")
+_UNITS = {"d": 86400, "day": 86400, "h": 3600, "hr": 3600, "hour": 3600, "m": 60, "min": 60, "minute": 60,
+          "s": 1, "sec": 1, "second": 1}
+
+
+def parse_reset(text: str) -> float | None:
+    """When a limit resets, as a timestamp, from the wording of the message; None when it does not say."""
+    low = (text or "").lower()
+    m = re.search(r"\|(\d{10})\b", low)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"(?:try again in|retry in|resets in|available in)\s+((?:\d+\s*[a-z]+[\s,]*(?:and\s+)?)+)", low)
+    if m:
+        total = 0
+        for n, unit in re.findall(r"(\d+)\s*([a-z]+)", m.group(1)):
+            unit = unit.rstrip("s") if unit not in ("s",) else unit
+            total += int(n) * _UNITS.get(unit, _UNITS.get(unit[:1], 0))
+        if total:
+            return time.time() + total
+    m = re.search(r"(?:resets?|try again at|available again at)\s*(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", low)
+    if m:
+        h, mi, ap = int(m.group(1)), int(m.group(2) or 0), m.group(3)
+        if ap == "pm" and h < 12:
+            h += 12
+        if ap == "am" and h == 12:
+            h = 0
+        if h < 24 and mi < 60:
+            now = time.localtime()
+            t = time.mktime((now.tm_year, now.tm_mon, now.tm_mday, h, mi, 0, 0, 0, -1))
+            return t if t > time.time() else t + 86400
+    return None
+
+
+def limit_info(text: str, strict: bool = False) -> dict | None:
+    """{"until": timestamp or None, "message": ...} when text says a usage or rate limit was hit.
+    strict: for a model's reply rather than an error, only the CLIs' own limit wording counts."""
+    low = (text or "").lower()
+    words = ("usage limit reached", "hit your usage limit", "hit your limit", "-hour limit reached") if strict else _LIMIT_WORDS
+    if not low or any(w in low for w in _BILLING_WORDS) or not any(w in low for w in words):
+        return None
+    line = next((ln.strip() for ln in (text or "").splitlines() if any(w in ln.lower() for w in _LIMIT_WORDS)), text.strip())
+    return {"until": parse_reset(text), "message": line[:300]}
 
 
 def available(engine: str, s: dict | None = None) -> bool:
@@ -150,9 +200,14 @@ def run(engine: str, prompt: str, cwd: Path, s: dict, images: list[str] | None =
     the list of file paths Claude read with its Read tool during the turn."""
     if engine in API:
         try:
-            return api_engines.run(engine, prompt, s, images=images, session=session, on_activity=on_activity, cancel=cancel)
+            r = api_engines.run(engine, prompt, s, images=images, session=session, on_activity=on_activity, cancel=cancel)
         except api_engines.Cancelled:
             raise Cancelled() from None
+        if r.get("error") and not r.get("limit"):
+            lim = limit_info(r["error"])
+            if lim:
+                r["limit"] = lim
+        return r
     base = resolve(engine)
     if not base:
         return {"text": "", "session": session, "error": f"`{engine}` CLI not found on PATH"}
@@ -283,4 +338,17 @@ def run(engine: str, prompt: str, cwd: Path, s: dict, images: list[str] | None =
         hint = SIGN_IN["claude"] if any(w in low for w in _AUTH_WORDS[:3]) else None
     if hint:
         out.update(error=hint, text="")
+        return out
+    # A usage limit: the caller waits for it to reset and asks again, instead of failing the run.
+    probe = ""
+    if out["error"]:
+        try:
+            probe = out["error"] + "\n" + (cwd / f"_{engine}_stderr.log").read_text(encoding="utf-8", errors="replace")[-1500:]
+        except OSError:
+            probe = out["error"]
+    elif engine == "claude" and len(out["text"]) < 300:
+        probe = out["text"]
+    lim = limit_info(probe, strict=not out["error"])
+    if lim:
+        out.update(limit=lim, error=f"{ENGINES[engine]} usage limit reached: {lim['message']}", text="")
     return out

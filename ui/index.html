@@ -98,6 +98,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
     <div class="card jobcard">
       <div class="jobhead"><span class="jt"></span><span class="st jst"></span><button class="link jx hidden">dismiss</button></div>
       <p class="overall"></p>
+      <div class="limitbox"></div>
       <ul class="units"></ul>
       <div class="failsbox"></div>
       <div class="result"></div>
@@ -647,6 +648,22 @@ function showJob(j) {
   else if (j.status === 'error') r = `<div class="banner bad">${L('Run failed: ', '运行失败：')}${esc(j.error)}</div>`;
   if (q('.result').innerHTML !== r) q('.result').innerHTML = r;
   showFailures(j, card, running);
+  showLimit(j, card, running);
+}
+// A model usage limit: model calls wait and resume by themselves; the rest of the run carries on.
+function showLimit(j, card, running) {
+  const box = $('.limitbox', card), lim = running ? j.limit : null;
+  const key = lim ? JSON.stringify([lim.what, Math.round(lim.until), UI_LANG]) : '';
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  if (!lim) { box.innerHTML = ''; return; }
+  const at = new Date(lim.until * 1000), when = at.toTimeString().slice(0, 5) + (at.toDateString() !== new Date().toDateString() ? ' ' + at.toLocaleDateString() : '');
+  box.innerHTML = `<div class="banner warn" data-notr><b>${L(`${esc(lim.what)} usage limit reached`, `${esc(lim.what)} 用量已达上限`)}</b>: `
+    + L(`model calls are waiting and will try again by themselves at about <b>${when}</b>. Downloads and frame extraction carry on meanwhile, and nothing is lost.`,
+        `模型调用正在等待，约 <b>${when}</b> 会自动重试。期间下载和取帧照常进行，不会丢失任何内容。`)
+    + `<br><span class="hint">${esc(lim.message || '')}</span><br>`
+    + `<button class="limitretry">${L('Retry now', '立即重试')}</button> <span class="hint">${L('if you have just reset or raised the limit', '如果你刚刚重置或提高了额度')}</span></div>`;
+  $('.limitretry', box).onclick = () => api('/api/limit_retry', {id: j.id}).then(poll);
 }
 // Links that could not be watched: why, what to do, and a way to try them again.
 function showFailures(j, card, running) {
