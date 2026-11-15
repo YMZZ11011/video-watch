@@ -49,7 +49,8 @@ pre.log{background:var(--bg);border:1px solid var(--line);border-radius:8px;padd
 .bar{height:5px;border-radius:3px;background:var(--line);margin:6px 0 2px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent);transition:width .8s linear}
 .overall{font-size:14px;margin:0 0 8px}
 .jobhead{display:flex;gap:10px;align-items:baseline;margin:0 0 10px}.jobhead .jt{font-weight:600;font-size:16px;flex:1;min-width:0;overflow-wrap:anywhere}
-.jobhead .jst{font-size:12px;text-transform:uppercase;letter-spacing:.04em}.jobcard .logbox summary{margin-top:10px}.overall b{font-variant-numeric:tabular-nums}
+.jobhead .jst{font-size:12px;text-transform:uppercase;letter-spacing:.04em}.st.paused{color:#b7791f}
+.jobbtns{margin-top:12px;display:flex;gap:8px}.jobcard.is-paused .bar i{background:#b7791f}.jobcard .logbox summary{margin-top:10px}.overall b{font-variant-numeric:tabular-nums}
 details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
 .topics{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 14px;border-bottom:1px solid var(--line)}
 .topic{display:flex;align-items:center;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:var(--bg);margin-bottom:-1px}
@@ -97,7 +98,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
       <p class="overall"></p>
       <ul class="units"></ul>
       <div class="result"></div>
-      <button class="stop hidden" style="margin-top:12px">Stop</button>
+      <div class="jobbtns"><button class="pause hidden">Pause</button> <button class="stop hidden">Stop</button></div>
       <details class="logbox" open><summary>Progress log</summary><pre class="log"></pre></details>
     </div>
   </template>
@@ -596,7 +597,8 @@ function jobCard(j) {
   if (card) return card;
   card = $('#jobtpl').content.firstElementChild.cloneNode(true);
   card.dataset.id = j.id;
-  $('.stop', card).onclick = () => api('/api/cancel', {id: j.id});
+  $('.stop', card).onclick = () => api('/api/cancel', {id: j.id}).then(poll);
+  $('.pause', card).onclick = () => api('/api/pause', {id: j.id, pause: !card.classList.contains('is-paused')}).then(poll);
   $('.jx', card).onclick = () => api('/api/dismiss', {id: j.id}).then(() => card.remove());
   $('#jobs').prepend(card);
   return card;
@@ -606,7 +608,9 @@ function showJob(j) {
   const card = jobCard(j), q = sel => $(sel, card);
   const first = (j.units || [])[0] || {};
   q('.jt').textContent = j.title || (j.units.length === 1 ? first.label : '') || L(`Run started ${new Date(j.started_at * 1000).toTimeString().slice(0, 5)}`, `${new Date(j.started_at * 1000).toTimeString().slice(0, 5)} 开始的运行`);
-  q('.jst').textContent = j.status; q('.jst').className = 'st jst ' + j.status;
+  const paused = j.status === 'running' && j.paused;
+  card.classList.toggle('is-paused', !!paused);
+  q('.jst').textContent = paused ? 'paused' : j.status; q('.jst').className = 'st jst ' + (paused ? 'paused' : j.status);
   q('.units').innerHTML = (j.units || []).map(u => {
     const run = u.status === 'running';
     const pct = run ? Math.max(3, Math.min(97, 100 * u.elapsed / (u.elapsed + u.remaining + 1))) : 0;
@@ -615,7 +619,10 @@ function showJob(j) {
     return `<li><span class="st ${u.status}">${u.status}</span><span class="lb">${esc(u.label)}<br><span class="dt">${esc(ENGINE_NAMES[u.engine] || '')}${eta}${u.detail ? ' · ' + esc(u.detail) : ''}</span>${run ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}${stages ? `<br><span class="dt">${stages}</span>` : ''}</span></li>`;
   }).join('');
   const nDone = (j.units || []).filter(u => !['queued', 'running'].includes(u.status)).length;
-  q('.overall').innerHTML = j.elapsed == null ? '' : j.status === 'running'
+  q('.overall').innerHTML = j.elapsed == null ? '' : paused
+    ? L(`<b>Paused</b> · ${nDone} of ${j.units.length} items finished · <b>${clock(j.elapsed)}</b> watched so far. Downloads and frame extraction are frozen where they are; a model call already under way finishes, and nothing new starts until you press Resume.`,
+        `<b>已暂停</b> · 已完成 ${nDone}/${j.units.length} 个条目 · 已观看 <b>${clock(j.elapsed)}</b>。下载和取帧停在原处；正在进行的模型调用会完成，按“继续”之前不会开始新的步骤。`)
+    : j.status === 'running'
     ? (nDone === j.units.length && j.phase ? L(`All <b>${nDone}</b> items watched · <b>${clock(j.elapsed)}</b> elapsed · now <b>${esc(j.phase)}</b>…`, `全部 <b>${nDone}</b> 个条目已看完 · 已用 <b>${clock(j.elapsed)}</b> · 正在${esc(j.phase)}…`)
     : L(`<b>${nDone} of ${j.units.length}</b> items finished · <b>${clock(j.elapsed)}</b> elapsed · about <b>${rough(j.remaining)}</b> left <span class="hint">(${j.estimate_basis ? 'estimate from ' + j.estimate_basis + (j.estimate_basis > 1 ? ' earlier analyses' : ' earlier analysis') : 'rough estimate; improves as you use it'})</span>`,
         `已完成 <b>${nDone}/${j.units.length}</b> 个条目 · 已用 <b>${clock(j.elapsed)}</b> · 预计还需 <b>${tr(rough(j.remaining))}</b> <span class="hint">（${j.estimate_basis ? '根据之前 ' + j.estimate_basis + ' 次分析估算' : '粗略估算，用得越多越准'}）</span>`))
@@ -625,6 +632,8 @@ function showJob(j) {
   if (log.textContent !== text) { log.textContent = text; if (atEnd) log.scrollTop = log.scrollHeight; }
   const running = j.status === 'running';
   q('.stop').classList.toggle('hidden', !running);
+  q('.pause').classList.toggle('hidden', !running);
+  q('.pause').textContent = paused ? 'Resume' : 'Pause';
   q('.jx').classList.toggle('hidden', running);
   let r = '';
   const failedNote = j.failed ? L(` (${j.failed} item${j.failed > 1 ? 's' : ''} failed)`, `（${j.failed} 个条目失败）`) : '';

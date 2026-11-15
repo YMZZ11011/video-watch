@@ -104,7 +104,9 @@ def stop_run(run_id: str) -> None:
     j = jobs.get(run_id)
     if not j:
         return
+    freeze(j.pop("suspended", []), False)   # a frozen process is woken so it can be ended cleanly
     j["cancel"].set()
+    j["paused"] = False
     log("stop requested: ending downloads, frame extraction and model calls", j)
 
     def sweep() -> None:
@@ -117,12 +119,86 @@ def stop_run(run_id: str) -> None:
     threading.Thread(target=sweep, daemon=True).start()
 
 
+def run_processes(run_id: str) -> list[int]:
+    """Process ids of a run's downloads and frame extraction (yt-dlp, ffmpeg, ffprobe) and everything
+    they started. Model CLIs are left out: a call under way is allowed to finish."""
+    tops = [p.pid for p in list(children) if p.poll() is None and not getattr(p, "keep", False)
+            and re.search(re.escape(run_id) + r"(?![0-9A-Za-z])", getattr(p, "vw_where", ""))
+            and re.search(r"(yt-dlp|ffmpeg|ffprobe)(\.exe)?$", str(p.args[0] if isinstance(p.args, (list, tuple)) else p.args), re.I)]
+    if not tops or os.name != "nt":
+        return tops
+    import ctypes
+    from ctypes import wintypes
+
+    class Entry(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD),
+                    ("cntThreads", wintypes.DWORD), ("th32ParentProcessID", wintypes.DWORD),
+                    ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+
+    k32 = ctypes.windll.kernel32
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snap = k32.CreateToolhelp32Snapshot(2, 0)
+    kids: dict[int, list[int]] = {}
+    e = Entry()
+    e.dwSize = ctypes.sizeof(Entry)
+    ok = k32.Process32FirstW(snap, ctypes.byref(e))
+    while ok:
+        kids.setdefault(e.th32ParentProcessID, []).append(e.th32ProcessID)
+        ok = k32.Process32NextW(snap, ctypes.byref(e))
+    k32.CloseHandle(snap)
+    out, todo = [], list(tops)
+    while todo:
+        pid = todo.pop()
+        if pid not in out:
+            out.append(pid)
+            todo += kids.get(pid, [])
+    return out
+
+
+def freeze(pids: list[int], on: bool) -> int:
+    """Suspend (on) or resume a list of processes. Returns how many it reached."""
+    if os.name != "nt" or not pids:
+        return 0
+    import ctypes
+    ntdll, k32, n = ctypes.windll.ntdll, ctypes.windll.kernel32, 0
+    for pid in pids:
+        h = k32.OpenProcess(0x0800, False, pid)   # PROCESS_SUSPEND_RESUME
+        if h:
+            (ntdll.NtSuspendProcess if on else ntdll.NtResumeProcess)(h)
+            k32.CloseHandle(h)
+            n += 1
+    return n
+
+
+def pause_run(run_id: str, pause: bool) -> None:
+    """Pause: nothing new starts (downloads, frames, model calls wait at their next step) and the
+    run's downloads and frame extraction under way are frozen where they are. Resume picks up there."""
+    j = jobs.get(run_id)
+    if not j or j.get("status") != "running":
+        return
+    ctl: RunControl = j["cancel"]
+    if pause and not ctl.paused:
+        ctl.pause()
+        j["suspended"] = run_processes(run_id)
+        froze = freeze(j["suspended"], True)
+        j["paused"] = True
+        log("paused: downloads and frame extraction are on hold" + (f" ({froze} process(es) frozen)" if froze else "")
+            + "; a model call already under way finishes, and nothing new starts until you resume", j)
+    elif not pause and ctl.paused:
+        freeze(j.pop("suspended", []), False)
+        ctl.resume()
+        j["paused"] = False
+        log("resumed", j)
+
+
 def running_ids() -> list[str]:
     with lock:
         return [k for k, j in jobs.items() if j.get("status") == "running"]
 
 import api_engines  # noqa: E402
 import deep  # noqa: E402
+from control import RunControl  # noqa: E402
 import i18n  # noqa: E402
 import llm  # noqa: E402
 import report  # noqa: E402
@@ -220,7 +296,7 @@ def est_model(engine: str, frames: int | None, dynamic: bool) -> float:
 
 
 def public(j: dict) -> dict:
-    return {k: v for k, v in j.items() if k != "cancel"}
+    return {k: v for k, v in j.items() if k not in ("cancel", "suspended")}
 
 
 def with_estimates(j: dict) -> dict:
@@ -246,8 +322,9 @@ def with_estimates(j: dict) -> dict:
         left += rem
         units.append(u)
     out = {**public(j), "units": units, "log": j.get("log", [])[-300:]}
-    if j.get("started_at"):
-        out["elapsed"] = round((j.get("ended_at") or now) - j["started_at"])
+    if j.get("started_at"):   # time spent paused does not count
+        held = j["cancel"].paused_for() if hasattr(j.get("cancel"), "paused_for") else 0
+        out["elapsed"] = round((j.get("ended_at") or now) - j["started_at"] - held)
         out["remaining"] = round(left / max(1, int(j.get("parallel") or 1)))
         out["estimate_basis"] = len(history)
     return out
@@ -664,6 +741,8 @@ def plan_reports(done: list[dict], s: dict, title: str, log=log, cancel: threadi
     try:
         tmp = DATA / "tmp"
         tmp.mkdir(parents=True, exist_ok=True)
+        if cancel is not None and getattr(cancel, "checkpoint", None) and cancel.checkpoint():
+            raise llm.Cancelled()
         r = llm.run(s["engine"], prompt, tmp, {**s, "max_turns": 5}, cancel=cancel)
         plan = json.loads(re.search(r"\[.*\]", r.get("text") or "", re.S).group(0))
         seen: set[int] = set()
@@ -730,6 +809,8 @@ def summarise(units: list[dict], s: dict, title: str, work: Path, cancel: thread
     work.mkdir(parents=True, exist_ok=True)
     out = {"analysis": "", "engine": s["engine"], "model": "", "seconds": 0, "cost": 0.0, "error": None}
     try:
+        if cancel is not None and getattr(cancel, "checkpoint", None) and cancel.checkpoint():
+            raise llm.Cancelled()
         r = llm.run(s["engine"], prompt, work, {**s, "max_turns": 5}, cancel=cancel)
         m = re.search(r"<report>(.*?)(?:</report>|\Z)", r.get("text") or "", re.S)
         out.update(analysis=(m.group(1) if m else r.get("text") or "").strip(), cost=r.get("cost") or 0.0,
@@ -799,7 +880,7 @@ def run_job(run_id: str, title: str, units: list[dict], s: dict) -> None:
 
     def work(i: int) -> None:
         state = job["units"][i]
-        if cancel.is_set():
+        if cancel.checkpoint():   # a paused run starts its next item only after Resume
             state.update(status="cancelled", detail="")
             return
         state.update(status="running", detail="starting", started=time.time())
@@ -848,7 +929,7 @@ def run_job(run_id: str, title: str, units: list[dict], s: dict) -> None:
             frames = [f for u in done for v in u["videos"] for f in v["frames"]]
             if frames:
                 before, after = compress_frames(frames, int(s["report_image_width"]), int(s["report_image_quality"]),
-                                                cancelled=cancel.is_set)
+                                                cancelled=cancel.checkpoint)
                 log(f"compressed {len(frames)} gallery images: {before / 1048576:.1f} MB -> {after / 1048576:.1f} MB")
         with lock:
             job["phase"] = "deciding how to group the reports" if len(done) > 1 else "writing the report"
@@ -1051,7 +1132,7 @@ class Handler(BaseHTTPRequestHandler):
                     run_id = f"{stamp}{chr(96 + n)}"
                 (RUNS / run_id).mkdir(parents=True, exist_ok=True)
                 jobs[run_id] = {"status": "running", "id": run_id, "title": title, "log": [], "started_at": time.time(),
-                                "parallel": s["parallel"], "cancel": threading.Event(), "units": [
+                                "parallel": s["parallel"], "cancel": RunControl(), "paused": False, "units": [
                     {"label": u["urls"][0] if len(u["urls"]) == 1 else f"Bundle of {len(u['urls'])} videos",
                      "status": "queued", "detail": "", "engine": u.get("engine") or s["engine"],
                      "videos": len(u["urls"]), "stages": []} for u in units]}
@@ -1062,6 +1143,9 @@ class Handler(BaseHTTPRequestHandler):
             for rid in ids:
                 if jobs.get(rid, {}).get("status") == "running":
                     stop_run(rid)
+            return self._json({"ok": True})
+        if path == "/api/pause":
+            pause_run(str(body.get("id") or ""), bool(body.get("pause", True)))
             return self._json({"ok": True})
         if path == "/api/dismiss":   # hide a finished run's progress card
             with lock:

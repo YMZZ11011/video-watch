@@ -22,6 +22,7 @@ from pathlib import Path
 
 import i18n
 import llm
+from control import checkpoint_of
 from pipeline import fmt, grab_frames
 
 LEVELS = ("gist", "summary", "detailed", "deep")
@@ -203,7 +204,7 @@ def write(videos: list[dict], notes: dict, task: str, s: dict, engine: str, ask,
           cancel, frame_lines, sees: bool = True) -> dict:
     """Run stages 2-4. Returns {"deep": {...}, "analysis": text, "category": str}."""
     at_once = max(1, min(int(s.get("agent_parallel") or 4), 12))
-    keys = {v["id"]: key_frames(v, notes.get(v["id"], ""), s, udir, log, cancel.is_set) for v in videos}
+    keys = {v["id"]: key_frames(v, notes.get(v["id"], ""), s, udir, log, checkpoint_of(cancel)) for v in videos}
     sections: dict[str, dict] = {}
     multi = len(videos) > 1
     done = [0]

@@ -100,7 +100,13 @@ watching.
 You can also press Watch again while a run is going to start another one: each run gets its own progress card,
 named by its report title, with its own Stop button, log and estimates, and stopping one leaves the
 others running. Give each run its own title; a second run with the same title as one still watching
-is refused, so a double click cannot start it twice. Runs share the computer and your model's rate
+is refused, so a double click cannot start it twice.
+
+Pause on a run's card holds it without losing anything: downloads and frame extraction under way
+are frozen where they are (the processes are suspended), and nothing new starts, neither the next
+video nor the next model call. A model call already under way finishes. Resume carries on from the
+same point; time spent paused does not count toward the run's elapsed time. Stop also works on a
+paused run. Runs share the computer and your model's rate
 limits, so many large runs at once each go slower.
 
 ## Progress, estimates and logs

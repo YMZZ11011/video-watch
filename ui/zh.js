@@ -115,7 +115,7 @@ const ZH = {
   'interval': '固定间隔', 'count': '固定数量', 'scene': '场景切换', 'keyframes': '关键帧', 'dynamic': '动态', 'transcript': '仅字幕',
   'taking longer than estimated': '比预计耗时更长', 'the app did not answer': '应用没有响应',
   'Add at least one video URL or file path.': '请至少添加一个视频链接或文件路径。', 'A run is already in progress.': '已有运行在进行中。',
-  'Progress log': '进度日志', 'dismiss': '关闭', '+ New topic': '+ 新主题', 'Watch all topics': '全部主题开始观看',
+  'Progress log': '进度日志', 'dismiss': '关闭', 'Pause': '暂停', 'Resume': '继续', 'paused': '已暂停', '+ New topic': '+ 新主题', 'Watch all topics': '全部主题开始观看',
   'Each topic has its own report title and items, and becomes its own run: watch the topic you are on, or all topics at once. Runs go on at the same time and can be stopped one by one.':
     '每个主题有自己的报告标题和条目，并作为单独的一次运行：可以只看当前主题，也可以一次看全部主题。多个运行同时进行，可以逐个停止。',
   'Give each run its own title to tell them apart. Runs go on at the same time and can be stopped one by one.': '为每次运行起一个不同的标题以便区分。多个运行可以同时进行，并且可以逐个停止。',

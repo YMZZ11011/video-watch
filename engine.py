@@ -14,6 +14,7 @@ from pathlib import Path
 
 import deep
 import i18n
+from control import checkpoint_of
 import llm
 import pipeline
 from pipeline import fmt, format_transcript, grab_frames, label_frames, prepare_video
@@ -227,18 +228,19 @@ def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage) -> dic
         "label": unit.get("label"), "instructions": unit.get("instructions") or "", "engine": engine,
         "mode": s["mode"], "videos": [], "rounds": [], "analysis": "", "category": "", "error": None, "llm": {},
     }
+    chk = checkpoint_of(cancel)   # waits here while the run is paused; True once it is stopped
     try:
         udir.mkdir(parents=True, exist_ok=True)
         videos = res["videos"]
         n = len(unit["urls"])
         for vi, src in enumerate(unit["urls"], 1):
-            if cancel.is_set():
+            if chk():
                 raise llm.Cancelled()
             status(f"preparing video {vi} of {n}")
             v = prepare_video(src, udir / f"v{vi}", s, unit.get("start"), unit.get("end"),
                               lambda m, vi=vi: log(f"video {vi}: {m}"),
                               stage=lambda name, vi=vi: stage(name if n == 1 else f"v{vi} {name}"),
-                              cancelled=cancel.is_set)
+                              cancelled=chk)
             v["id"] = f"v{vi}"
             for k, f in enumerate(v["frames"], 1):
                 f.update(id=f"v{vi}f{k:03d}", round=0)
@@ -264,6 +266,8 @@ def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage) -> dic
         tally = threading.Lock()
 
         def once(prompt: str, frames: list[dict], session: str | None, over: dict | None = None, eng: str = engine) -> dict:
+            if chk():   # a paused run starts no new model call (calls already under way finish)
+                raise llm.Cancelled()
             # Claude opens frames itself and may spend a turn on each; leave room when there are many
             turns = max(int(s.get("max_turns") or 60), len(frames) * 2 + 20)
             r = llm.run(eng, prompt, udir, {**s, "max_turns": turns, **(over or {})}, images=images_for(frames, eng),
@@ -418,7 +422,7 @@ def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage) -> dic
                         continue
                     wanted.append((min(t, max(0.0, v["duration"] - 0.25)), str(q.get("why") or "").strip()[:200]))
                 got = grab_frames(v["video_path"], udir / vid / "frames", [t for t, _ in wanted], int(s["resolution"]), f"r{rnd}",
-                                  cancel.is_set)
+                                  chk)
                 for (t, path), (_, why) in zip(got, wanted):
                     if not path:
                         skipped += 1
