@@ -68,7 +68,11 @@ documentation and may need adjusting.
 Reports can be written in English, Simplified Chinese or Traditional Chinese, whatever language the
 videos are in (Report panel, Report language). The report's own headings, depth names and buttons
 follow the language; in Chinese, technical terms keep the English in brackets the first time.
-The app's own interface is in English.
+The language picker sits next to the Watch button.
+
+The app's own interface is available in English and Simplified Chinese: switch with the menu next
+to Quit (it starts in Chinese when Windows is set to Chinese). Messages that come from the AI tools
+themselves, the progress log and some error details stay in English.
 
 ## Run from source
 

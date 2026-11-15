@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Video Watch</title>
+<script src="/ui/zh.js"></script>
 <style>
 :root{--bg:#f6f5f1;--card:#fff;--ink:#1d1c1a;--mute:#6b6a65;--line:#dedcd4;--accent:#a5481f;--accent-ink:#fff;--soft:#f1ede4;--bad:#a3281c;--ok:#2f6b3c}
 @media (prefers-color-scheme:dark){:root{--bg:#161614;--card:#1f1f1c;--ink:#ebe9e3;--mute:#a09e97;--line:#3a3934;--accent:#e58a5c;--accent-ink:#1a1108;--soft:#2a2925;--bad:#ef8f84;--ok:#86c795}}
@@ -51,7 +52,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
 </style>
 </head>
 <body>
-<header><h1>Video Watch</h1><span class="env" id="env">checking tools…</span><button class="link" id="quit" style="margin-left:auto">Quit</button></header>
+<header><h1>Video Watch</h1><span class="env" id="env">checking tools…</span><select id="uilang" data-notr title="Interface language / 界面语言" style="margin-left:auto;width:auto;padding:4px 8px;font-size:13px"><option value="en">English</option><option value="zh">中文</option></select><button class="link" id="quit">Quit</button></header>
 <div class="layout">
 <div>
   <div class="card">
@@ -306,14 +307,33 @@ const ENGINE_NAMES = {claude: 'Claude Code', codex: 'Codex', claude_api: 'Claude
 const CLI = ['claude', 'codex'];
 const providerOf = e => e === 'claude_api' ? 'anthropic' : e === 'openai_api' ? (settings.openai_api_provider || 'openai') : null;
 const preset = () => ((env.providers || {}).presets || {})[settings.openai_api_provider || 'openai'] || {};
-const KEY_HELP = p => p === 'anthropic' ? 'Create a key at console.anthropic.com (Settings, API keys). Usage is billed to that Console account.'
-  : preset().site ? `Create a key at ${preset().site}. Usage is billed to that account.` : '';
-const SIGN_HELP = {
+const KEY_HELP = p => p === 'anthropic' ? L('Create a key at console.anthropic.com (Settings, API keys). Usage is billed to that Console account.', '在 console.anthropic.com（Settings → API keys）创建密钥，费用记在该 Console 账户。')
+  : preset().site ? L(`Create a key at ${preset().site}. Usage is billed to that account.`, `在 ${preset().site} 创建密钥，费用记在该账户。`) : '';
+const SIGN_HELP = UI_LANG === 'zh' ? {
+  claude: '登录方法：打开终端（按 Win+R，输入 <b>cmd</b>，回车），运行 <code>claude auth login</code>，然后在弹出的浏览器窗口中完成登录（Claude Pro 或 Max 订阅，或 Anthropic Console 账户）。',
+  codex: '登录方法：打开终端（按 Win+R，输入 <b>cmd</b>，回车），运行 <code>codex login</code>，然后在弹出的浏览器窗口中用你的 ChatGPT 账户登录。'} : {
   claude: 'To sign in: open a terminal (Win+R, type <b>cmd</b>, Enter), run <code>claude auth login</code> and finish in the browser window that opens (a Claude Pro or Max plan, or an Anthropic Console account).',
   codex: 'To sign in: open a terminal (Win+R, type <b>cmd</b>, Enter), run <code>codex login</code> and sign in with your ChatGPT account in the browser window that opens.'};
-const INSTALL_HELP = {
+const INSTALL_HELP = UI_LANG === 'zh' ? {
+  claude: '未安装 Claude Code。请重新运行 Video Watch 安装程序并勾选它，或从 docs.claude.com/claude-code 安装。',
+  codex: '未安装 Codex。请重新运行 Video Watch 安装程序并勾选它，或安装 Node.js 后运行 <code>npm install -g @openai/codex</code>。'} : {
   claude: 'Claude Code is not installed. Run the Video Watch installer again and tick it, or install it from docs.claude.com/claude-code.',
   codex: 'Codex is not installed. Run the Video Watch installer again and tick it, or install Node.js and run <code>npm install -g @openai/codex</code>.'};
+const LIMITS_ZH = {
+  openai: '所有当前 GPT 模型都能看图片。按 token 计费，记在你的 OpenAI API 账户，与 ChatGPT 订阅是分开的。',
+  gemini: '使用 Google 的 OpenAI 兼容接口，支持的选项比 Gemini 原生 API 少。免费密钥每分钟只允许少量请求：请把“同时运行的子智能体”设为 1 或 2。',
+  openrouter: '一个密钥可用数百个模型。只有支持图片输入的模型才能看画面，图片上限和价格取决于所选模型。',
+  deepseek: '只有 DeepSeek 支持视觉的 flash 模型能看图片（2026 年 8 月起）；其他模型只能读文本，请把“模型能否看图片”设为“不能”。回复约 8,000 token 就会停止，所以深度解析会短一些。',
+  qwen: '只有 VL 模型（名称含 vl，例如 qwen-vl-max）能看图片。中国大陆账户请用 https://dashscope.aliyuncs.com/compatible-mode/v1 作为地址。',
+  moonshot: '只有视觉模型能看图片。中国大陆账户请用 https://api.moonshot.cn/v1。较旧的模型上下文较短，长字幕会被截断。',
+  zhipu: '只有 GLM-V 模型（名称含 v，例如 glm-4.5v）能看图片，每次请求能带的图片很少，所以长视频需要很多次调用。未在本应用中测试。',
+  xai: '只有支持图片输入的 Grok 模型能看画面。未在本应用中测试。',
+  mistral: 'Pixtral 以及较新的 Medium 和 Small 模型能看图片。Mistral 没有固定的图片上限（取决于模型的 token 预算），所以默认每次 8 张。',
+  groq: '速度很快，但其视觉模型每次只接受 3 到 5 张图片，所以长视频会拆成很多次小调用，免费额度的速率限制也较低。',
+  ollama: '免费、私密：在你自己的电脑上运行。请先拉取一个视觉模型（例如 ollama pull qwen2.5vl）。Ollama 默认上下文很小，请把 OLLAMA_CONTEXT_LENGTH 设为 32768 或更大，否则长提示会被悄悄截断。比云端模型慢得多，小型本地模型写出的报告也单薄得多。',
+  lmstudio: '免费、私密。加载一个视觉模型并启动 LM Studio 的本地服务器；加载时设置较大的上下文长度。速度慢，小模型写出的报告较单薄。',
+  custom: '任何接受 base64 图片的 OpenAI Chat Completions 兼容服务（例如 Together、Fireworks、公司网关或自建 vLLM）。填写它的地址，并设置模型能否看图片以及每次请求的图片数。'};
+const NOT_SUPPORTED_ZH = '不支持：Azure OpenAI（需要部署专用地址和 api-key 请求头）、Amazon Bedrock、Google Vertex AI，以及没有 OpenAI 兼容接口的服务商。';
 
 /* ---------- entries ---------- */
 function entryCard(e = {}) {
@@ -358,7 +378,7 @@ async function uploadFiles(d, files) {
         const x = new XMLHttpRequest();
         x.open('POST', '/api/upload?name=' + encodeURIComponent(f.name));
         x.setRequestHeader('X-Video-Watch', '1');
-        x.upload.onprogress = e => { if (e.lengthComputable) st.textContent = `Adding ${f.name}${files.length > 1 ? ` (${i + 1} of ${files.length})` : ''}: ${Math.round(100 * e.loaded / e.total)}%`; };
+        x.upload.onprogress = e => { if (e.lengthComputable) st.textContent = L(`Adding ${f.name}${files.length > 1 ? ` (${i + 1} of ${files.length})` : ''}: ${Math.round(100 * e.loaded / e.total)}%`, `正在添加 ${f.name}${files.length > 1 ? `（${i + 1}/${files.length}）` : ''}：${Math.round(100 * e.loaded / e.total)}%`); };
         x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch (_) {} x.status === 200 ? ok(j) : bad(new Error(j.error || x.statusText)); };
         x.onerror = () => bad(new Error('the app did not answer'));
         x.send(f);
@@ -366,11 +386,11 @@ async function uploadFiles(d, files) {
       const t = $('.urls', d);
       t.value = (t.value.trim() ? t.value.trim() + '\n' : '') + r.path;
       t.dispatchEvent(new Event('input', {bubbles: true}));
-      st.textContent = `Added ${files.length > 1 ? files.length + ' files' : f.name}.`;
-    } catch (e) { st.textContent = `Could not add ${f.name}: ${e.message}`; }
+      st.textContent = L(`Added ${files.length > 1 ? files.length + ' files' : f.name}.`, `已添加 ${files.length > 1 ? files.length + ' 个文件' : f.name}。`);
+    } catch (e) { st.textContent = L(`Could not add ${f.name}: ${e.message}`, `无法添加 ${f.name}：${e.message}`); }
   }
   add.disabled = false;
-  st.textContent += ' The app watches its own copy, removed after the run unless "Keep downloaded video files" is on.';
+  st.textContent += L(' The app watches its own copy, removed after the run unless "Keep downloaded video files" is on.', '应用使用自己的副本观看，除非勾选“保留下载的视频文件”，否则运行结束后删除。');
 }
 // One per line; a line holding several links (pasted with spaces or commas) is split, and repeats are dropped.
 const urlsOf = d => [...new Set($('.urls', d).value.split('\n').flatMap(l => { l = l.trim(); const m = l.match(/https?:\/\/[^\s,;]+/g); return m && m.length > 1 || (m && l !== m[0] && /^https?:/.test(l)) ? m : [l]; }).filter(Boolean))];
@@ -444,11 +464,14 @@ function showEnv() {
 function providerHint() {
   const p = preset(), el = $('#providerhint');
   if (!el) return;
-  el.innerHTML = `<b>${esc(p.name || '')}</b>: ${esc(p.limits || '')}<br><span class="hint">Defaults: ${p.images ? `up to ${p.images} images per request` : 'text only'}${p.max_tokens ? `, replies up to ${p.max_tokens.toLocaleString()} tokens` : ''}. Limits change with each model; check the provider's own documentation.</span>`;
+  const pid = settings.openai_api_provider || 'openai';
+  el.innerHTML = UI_LANG === 'zh'
+    ? `<b>${esc(p.name || '')}</b>：${esc(LIMITS_ZH[pid] || p.limits || '')}<br><span class="hint">默认：${p.images ? `每次请求最多 ${p.images} 张图片` : '仅文本'}${p.max_tokens ? `，回复最多 ${p.max_tokens.toLocaleString()} token` : ''}。限制随模型变化，请以服务商自己的文档为准。</span>`
+    : `<b>${esc(p.name || '')}</b>: ${esc(p.limits || '')}<br><span class="hint">Defaults: ${p.images ? `up to ${p.images} images per request` : 'text only'}${p.max_tokens ? `, replies up to ${p.max_tokens.toLocaleString()} tokens` : ''}. Limits change with each model; check the provider's own documentation.</span>`;
   $('#openai_api_base').placeholder = p.base || 'https://your-service/v1';
   $('#openai_api_images').placeholder = p.images || 'model default';
   $('#openai_api_max_tokens').placeholder = p.max_tokens || 'provider default';
-  $('#notsupported').textContent = (env.providers || {}).not_supported || '';
+  $('#notsupported').textContent = L((env.providers || {}).not_supported || '', NOT_SUPPORTED_ZH);
 }
 function fillProviders() {
   const sel = $('#openai_api_provider'), ps = (env.providers || {}).presets || {};
@@ -474,7 +497,7 @@ function keyBoxes() {
     box.innerHTML = `<label>API key</label>` + (k.set ? `<p class="hint" style="margin:0 0 6px">${k.source === 'saved' ? 'Saved in this app, encrypted for your Windows account' : `Taken from the ${esc(k.env)} environment variable`}: <b>${esc(k.hint)}</b></p>` : '')
       + `<div class="row" style="align-items:end"><div><input type="password" class="keyin" autocomplete="off" spellcheck="false" placeholder="${k.set ? 'paste a new key to replace it' : 'paste your API key'}"></div><div style="flex:none"><button class="keysave">Save key</button></div></div>`
       + `<p style="margin:6px 0 0"><button class="link keytest"${k.set ? '' : ' disabled'}>check the key</button> · <button class="link keymodels"${k.set ? '' : ' disabled'}>load my models</button>${k.source === 'saved' ? ' · <button class="link danger keyrm">remove the key</button>' : ''}</p><p class="hint keyout"></p>`
-      + `<p class="hint">${KEY_HELP(p)} Checking the key and loading models cost nothing. Each provider keeps its own key. The key is sent only to ${p === 'anthropic' ? 'Anthropic' : 'that provider\'s address'}, never shown again here.</p>`;
+      + `<p class="hint">${KEY_HELP(p)} ${L(`Checking the key and loading models cost nothing. Each provider keeps its own key. The key is sent only to ${p === 'anthropic' ? 'Anthropic' : 'that provider\'s address'}, never shown again here.`, `检查密钥和加载模型不收费。每个服务商各有自己的密钥。密钥只会发送给${p === 'anthropic' ? ' Anthropic' : '该服务商的地址'}，之后不会再显示。`)}</p>`;
     const out = $('.keyout', box), inp = $('.keyin', box);
     const save = async () => {
       out.textContent = 'Saving…';
@@ -516,15 +539,16 @@ function showJob(j) {
   $('#units').innerHTML = (j.units || []).map(u => {
     const run = u.status === 'running';
     const pct = run ? Math.max(3, Math.min(97, 100 * u.elapsed / (u.elapsed + u.remaining + 1))) : 0;
-    const eta = run ? ` · ${clock(u.elapsed)} elapsed · ${u.over ? 'taking longer than estimated' : 'about ' + rough(u.remaining) + ' left'}` : u.status === 'queued' ? ` · about ${rough(u.remaining)} once started` : u.elapsed != null ? ` · took ${clock(u.elapsed)}` : '';
+    const eta = run ? ` · ${clock(u.elapsed)} elapsed · ${u.over ? 'taking longer than estimated' : 'about ' + rough(u.remaining) + ' left'}` : u.status === 'queued' ? ` · about ${rough(u.remaining)} once started` : u.elapsed != null ? ` · took ${clock(u.elapsed)}` : '';   // translated piece by piece in zh.js
     const stages = (u.stages || []).map(s => s.seconds != null ? `${esc(s.name)} ${Math.round(s.seconds)}s` : `<b>${esc(s.name)}…</b>`).join(' → ');
     return `<li><span class="st ${u.status}">${u.status}</span><span class="lb">${esc(u.label)}<br><span class="dt">${esc(ENGINE_NAMES[u.engine] || '')}${eta}${u.detail ? ' · ' + esc(u.detail) : ''}</span>${run ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}${stages ? `<br><span class="dt">${stages}</span>` : ''}</span></li>`;
   }).join('');
   const nDone = (j.units || []).filter(u => !['queued', 'running'].includes(u.status)).length;
   $('#overall').innerHTML = j.elapsed == null ? '' : j.status === 'running'
-    ? (nDone === j.units.length && j.phase ? `All <b>${nDone}</b> items watched · <b>${clock(j.elapsed)}</b> elapsed · now <b>${esc(j.phase)}</b>…`
-    : `<b>${nDone} of ${j.units.length}</b> items finished · <b>${clock(j.elapsed)}</b> elapsed · about <b>${rough(j.remaining)}</b> left <span class="hint">(${j.estimate_basis ? 'estimate from ' + j.estimate_basis + (j.estimate_basis > 1 ? ' earlier analyses' : ' earlier analysis') : 'rough estimate; improves as you use it'})</span>`)
-    : `<b>${nDone} of ${j.units.length}</b> items finished in <b>${clock(j.elapsed)}</b>`;
+    ? (nDone === j.units.length && j.phase ? L(`All <b>${nDone}</b> items watched · <b>${clock(j.elapsed)}</b> elapsed · now <b>${esc(j.phase)}</b>…`, `全部 <b>${nDone}</b> 个条目已看完 · 已用 <b>${clock(j.elapsed)}</b> · 正在${esc(j.phase)}…`)
+    : L(`<b>${nDone} of ${j.units.length}</b> items finished · <b>${clock(j.elapsed)}</b> elapsed · about <b>${rough(j.remaining)}</b> left <span class="hint">(${j.estimate_basis ? 'estimate from ' + j.estimate_basis + (j.estimate_basis > 1 ? ' earlier analyses' : ' earlier analysis') : 'rough estimate; improves as you use it'})</span>`,
+        `已完成 <b>${nDone}/${j.units.length}</b> 个条目 · 已用 <b>${clock(j.elapsed)}</b> · 预计还需 <b>${tr(rough(j.remaining))}</b> <span class="hint">（${j.estimate_basis ? '根据之前 ' + j.estimate_basis + ' 次分析估算' : '粗略估算，用得越多越准'}）</span>`))
+    : L(`<b>${nDone} of ${j.units.length}</b> items finished in <b>${clock(j.elapsed)}</b>`, `<b>${nDone}/${j.units.length}</b> 个条目完成，用时 <b>${clock(j.elapsed)}</b>`);
   const log = $('#log'), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
   log.textContent = (j.log || []).join('\n');
   if (atEnd) log.scrollTop = log.scrollHeight;
@@ -532,9 +556,10 @@ function showJob(j) {
   $('#cancel').classList.toggle('hidden', !running);
   $('#run').disabled = running;
   let r = '';
-  if (j.report && (j.reports || []).length > 1) r = `<div class="banner">${j.status === 'cancelled' ? 'Stopped. Partial reports' : j.reports.length + ' reports ready'}${j.failed ? ` (${j.failed} item${j.failed > 1 ? 's' : ''} failed)` : ''}:<br>` + j.reports.map(x => `<a href="${x.url}" target="_blank">${esc(x.title || 'Untitled')}</a> · <button class="link" onclick="openFolder('${x.id}')">folder</button>${x.exported ? ' · copy saved' : ''}`).join('<br>') + `<br><span class="hint">Progress log saved as run.log in the first report's folder</span></div>`;
-  else if (j.report) r = `<div class="banner">${j.status === 'cancelled' ? 'Stopped. Partial report' : 'Report ready'}${j.failed ? ` (${j.failed} item${j.failed > 1 ? 's' : ''} failed)` : ''}: <a href="${j.report}" target="_blank">open report</a> · <button class="link" onclick="openFolder('${j.id}')">open folder</button><br><span class="hint">${esc(j.path)}<br>Progress log saved next to it as run.log${j.exported ? '<br>Copy saved: ' + esc(j.exported) : ''}</span></div>`;
-  else if (j.status === 'error') r = `<div class="banner bad">Run failed: ${esc(j.error)}</div>`;
+  const failedNote = j.failed ? L(` (${j.failed} item${j.failed > 1 ? 's' : ''} failed)`, `（${j.failed} 个条目失败）`) : '';
+  if (j.report && (j.reports || []).length > 1) r = `<div class="banner">${j.status === 'cancelled' ? L('Stopped. Partial reports', '已停止。部分报告') : L(j.reports.length + ' reports ready', j.reports.length + ' 份报告已完成')}${failedNote}${L(':', '：')}<br>` + j.reports.map(x => `<a href="${x.url}" target="_blank">${esc(x.title || 'Untitled')}</a> · <button class="link" onclick="openFolder('${x.id}')">folder</button>${x.exported ? ' · copy saved' : ''}`).join('<br>') + `<br><span class="hint">${L("Progress log saved as run.log in the first report's folder", '进度日志保存在第一份报告文件夹中的 run.log')}</span></div>`;
+  else if (j.report) r = `<div class="banner">${j.status === 'cancelled' ? L('Stopped. Partial report', '已停止。部分报告') : L('Report ready', '报告已完成')}${failedNote}${L(': ', '：')}<a href="${j.report}" target="_blank">${L('open report', '打开报告')}</a> · <button class="link" onclick="openFolder('${j.id}')">open folder</button><br><span class="hint">${esc(j.path)}<br>${L('Progress log saved next to it as run.log', '进度日志保存在同一位置的 run.log')}${j.exported ? '<br>' + L('Copy saved: ', '副本已保存：') + esc(j.exported) : ''}</span></div>`;
+  else if (j.status === 'error') r = `<div class="banner bad">${L('Run failed: ', '运行失败：')}${esc(j.error)}</div>`;
   $('#result').innerHTML = r;
   if (!running && polling) { clearInterval(polling); polling = null; refreshRuns(); }
 }
@@ -546,9 +571,10 @@ const openFolder = id => api('/api/open', {id}).catch(e => alert(e.message));
 const size = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.ceil(b / 1024) + ' KB';
 async function refreshRuns() {
   const s = await api('/api/state');
-  $('#runs').innerHTML = s.runs.length ? s.runs.map(r => `<li><span><a href="/runs/${r.id}/report.html" target="_blank">${esc(r.title || 'Untitled run')}</a> <span class="hint">${r.started.replace('T', ' ')} · ${r.overview ? 'overview of ' + r.items + ' videos' : r.items + ' item' + (r.items > 1 ? 's' : '') + (r.summary ? ' + combined summary' : '')} · ${esc(r.mode)} · ${size(r.size)}${r.errors ? ' · ' + r.errors + ' failed' : ''}${r.exported ? ' · copy saved' : ''}</span></span><span class="acts"><button class="link" onclick="openFolder('${r.id}')">folder</button>${s.settings.export_dir ? ` <button class="link" onclick="saveCopy('${r.id}')">save copy</button>` : ''} <button class="link danger" onclick="delRun('${r.id}')">delete</button></span></li>`).join('') : '<li class="hint">None yet.</li>';
+  $('#runs').innerHTML = s.runs.length ? s.runs.map(r => `<li><span><a href="/runs/${r.id}/report.html" target="_blank">${esc(r.title || 'Untitled run')}</a> <span class="hint">${r.started.replace('T', ' ')} · ${r.overview ? L('overview of ' + r.items + ' videos', r.items + ' 个视频的总览') : L(r.items + ' item' + (r.items > 1 ? 's' : '') + (r.summary ? ' + combined summary' : ''), r.items + ' 个条目' + (r.summary ? ' + 综合摘要' : ''))} · ${esc(r.mode)} · ${size(r.size)}${r.errors ? ' · ' + L(r.errors + ' failed', r.errors + ' 个失败') : ''}${r.exported ? ' · copy saved' : ''}</span></span><span class="acts"><button class="link" onclick="openFolder('${r.id}')">folder</button>${s.settings.export_dir ? ` <button class="link" onclick="saveCopy('${r.id}')">save copy</button>` : ''} <button class="link danger" onclick="delRun('${r.id}')">delete</button></span></li>`).join('') : '<li class="hint">None yet.</li>';
   const st = s.storage;
-  $('#storeline').textContent = `${st.runs} run${st.runs === 1 ? '' : 's'} using ${size(st.bytes)} on this computer` + (st.work_bytes ? `, of which ${size(st.work_bytes)} is working files that can be deleted without losing any report.` : '.');
+  $('#storeline').textContent = L(`${st.runs} run${st.runs === 1 ? '' : 's'} using ${size(st.bytes)} on this computer` + (st.work_bytes ? `, of which ${size(st.work_bytes)} is working files that can be deleted without losing any report.` : '.'),
+    `${st.runs} 次运行，在本机占用 ${size(st.bytes)}` + (st.work_bytes ? `，其中 ${size(st.work_bytes)} 是工作文件，删除后不会丢失任何报告。` : '。'));
   $('#freework').classList.toggle('hidden', !st.work_bytes);
   lib = s.library || []; showLibrary();
   return s;
@@ -558,7 +584,9 @@ try { groupBy = localStorage.getItem('vw-group') || 'date'; } catch (_) {}
 function showLibrary() {
   $$('.grp button').forEach(b => b.classList.toggle('on', b.dataset.group === groupBy));
   const none = lib.filter(v => !v.category).length, cats = new Set(lib.filter(v => v.category).map(v => v.category)).size;
-  $('#libline').innerHTML = lib.length ? `${lib.length} video${lib.length === 1 ? '' : 's'} watched, in ${cats} categor${cats === 1 ? 'y' : 'ies'}.` + (none ? ` ${none} not filed yet: <button class="link" id="catfill">let the model categorise them</button>` : '') + ' Click a category to change it.' : 'Videos you watch are listed here, filed by date and by a category the model assigns.';
+  $('#libline').innerHTML = UI_LANG === 'zh'
+    ? (lib.length ? `已看 ${lib.length} 个视频，共 ${cats} 个类别。` + (none ? `${none} 个尚未归类：<button class="link" id="catfill">让模型分类</button>` : '') + '点击类别可修改。' : '看过的视频会列在这里，按日期和模型分配的类别归档。')
+    : lib.length ? `${lib.length} video${lib.length === 1 ? '' : 's'} watched, in ${cats} categor${cats === 1 ? 'y' : 'ies'}.` + (none ? ` ${none} not filed yet: <button class="link" id="catfill">let the model categorise them</button>` : '') + ' Click a category to change it.' : 'Videos you watch are listed here, filed by date and by a category the model assigns.';
   const groups = new Map();
   for (const v of lib) { const k = groupBy === 'date' ? v.date : (v.category || 'Uncategorised'); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(v); }
   const keys = [...groups.keys()];
@@ -588,17 +616,19 @@ function exportHint() {
   const dir = $('#export_dir').value.trim(), el = $('#exporthint');
   if (!dir) { el.textContent = 'Off. Point this at a folder inside Google Drive (or OneDrive, Dropbox) and every report syncs there.'; return; }
   const d = new Date(), p = n => String(n).padStart(2, '0');
-  const t = {year: d.getFullYear(), month: p(d.getMonth() + 1), day: p(d.getDate()), date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, time: p(d.getHours()) + p(d.getMinutes()), title: 'Video title', category: 'Category', id: 'run-id'};
+  const t = {year: d.getFullYear(), month: p(d.getMonth() + 1), day: p(d.getDate()), date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, time: p(d.getHours()) + p(d.getMinutes()), title: L('Video title', '视频标题'), category: L('Category', '类别'), id: 'run-id'};
   let rel = $('#export_layout').value || '{date} {time} {title}';
   for (const [k, v] of Object.entries(t)) rel = rel.split(`{${k}}`).join(v);
   rel = rel.split(/[\\/]+/).filter(Boolean).join('\\');
-  el.innerHTML = `Example: <b>${esc(dir.replace(/[\\/]+$/, ''))}\\${esc(rel)}${$('#export_extras').checked ? '\\report.html' : '.html'}</b><br>Words you can use: {year} {month} {day} {date} {time} {title} {category} {id}. A / starts a subfolder. <button class="link" id="openexport">open folder</button>`;
+  el.innerHTML = `${L('Example: ', '示例：')}<b>${esc(dir.replace(/[\\/]+$/, ''))}\\${esc(rel)}${$('#export_extras').checked ? '\\report.html' : '.html'}</b><br>${L('Words you can use: {year} {month} {day} {date} {time} {title} {category} {id}. A / starts a subfolder.', '可用的占位符：{year} {month} {day} {date} {time} {title} {category} {id}。用 / 开始一个子文件夹。')} <button class="link" id="openexport">open folder</button>`;
   $('#openexport').onclick = () => api('/api/open', {export: true}).catch(e => alert(e.message));
 }
 document.addEventListener('input', exportHint); document.addEventListener('change', exportHint);
 
 $('#add').onclick = () => { addEntry(); saveDraft(); };
 $('#title').oninput = saveDraft;
+$('#uilang').value = UI_LANG;
+$('#uilang').onchange = () => { try { localStorage.setItem('vw-ui', $('#uilang').value); } catch (_) {} location.reload(); };
 $('#quit').onclick = async () => { await api('/api/quit', {}).catch(() => {}); document.body.innerHTML = '<p style="padding:40px">Video Watch has stopped. You can close this window.</p>'; window.close(); };
 $('#cancel').onclick = () => api('/api/cancel', {});
 $('#run').onclick = async () => {
@@ -680,7 +710,11 @@ document.addEventListener('input', styleHint); document.addEventListener('change
 function splitHint() {
   const m = $('#report_split').value;
   $('#report_split_rule').classList.toggle('hidden', m !== 'custom');
-  $('#splithint').textContent = {
+  $('#splithint').textContent = UI_LANG === 'zh' ? {
+    auto: '看完后，你选择的模型会快速浏览每个视频的内容，决定哪些放进同一份报告，无关的视频各自成报告。',
+    video: '每个视频单独一份报告。', single: '本次运行的所有视频放进一份报告。',
+    custom: '模型按你在这里写的规则把视频分成多份报告。没有规则时按类别分组。'}[m]
+    + '你勾选为一组一起看的视频总会在同一份报告中。每份报告在“历史报告”中各占一条，在导出文件夹中也各有一份副本。' : {
     auto: 'After watching, the model you selected takes a quick look at what each video was about and decides which belong in the same report. Unrelated videos get their own.',
     video: 'Every video gets its own report.',
     single: 'All videos of the run go into one report.',
@@ -690,19 +724,22 @@ function splitHint() {
 document.addEventListener('input', splitHint); document.addEventListener('change', splitHint);
 function agentHint() {
   const size = +$('#agent_chunk').value || 40, at = Math.min(+$('#agent_parallel').value || 4, 12), mode = $('#agents').value;
-  $('#agenthint').textContent = mode === 'auto' ? `Automatic: up to ${Math.floor(size * 1.5)} frames one agent does everything; above that the frames are split across sub-agents of about ${size} frames each, ${at} at a time, which is several times faster on long videos.`
+  $('#agenthint').textContent = mode === 'auto' ? L(`Automatic: up to ${Math.floor(size * 1.5)} frames one agent does everything; above that the frames are split across sub-agents of about ${size} frames each, ${at} at a time, which is several times faster on long videos.`,
+      `自动：${Math.floor(size * 1.5)} 帧以内由一个智能体完成；超过时把画面分给多个子智能体，每个约 ${size} 帧，同时运行 ${at} 个，长视频会快好几倍。`)
     : mode === 'single' ? 'One model call opens every frame itself. Simplest, but slow when there are many frames.'
-    : `Frames are always split across at least two sub-agents (about ${size} frames each, ${at} at a time).`;
+    : L(`Frames are always split across at least two sub-agents (about ${size} frames each, ${at} at a time).`, `画面总是分给至少两个子智能体（每个约 ${size} 帧，同时运行 ${at} 个）。`);
 }
 document.addEventListener('input', agentHint); document.addEventListener('change', agentHint);
 function capHint() {
   const step = (+$('#interval_value').value || 0) * ($('#interval_unit').value === 'minutes' ? 60 : 1);
   const limit = +$('#frame_limit').value || 400, own = +$('#max_frames').value || 0;
   const cap = own ? Math.min(own, limit) : limit, reach = step * cap;
-  $('#autohint').innerHTML = own ? (own > limit ? `The cap is above the safety limit, so <b>${limit}</b> applies.` : '')
-    : `Automatic: each video gets as many frames as this mode asks for, up to the safety limit of <b>${limit}</b>. More frames means a slower and costlier analysis.`;
+  $('#autohint').innerHTML = own ? (own > limit ? L(`The cap is above the safety limit, so <b>${limit}</b> applies.`, `上限高于安全上限，因此按 <b>${limit}</b> 执行。`) : '')
+    : L(`Automatic: each video gets as many frames as this mode asks for, up to the safety limit of <b>${limit}</b>. More frames means a slower and costlier analysis.`,
+        `自动：每个视频按此模式需要的数量取帧，最多不超过安全上限 <b>${limit}</b>。画面越多，分析越慢、越贵。`);
   const span = reach >= 3600 ? (reach / 3600).toFixed(1) + ' h' : reach >= 60 ? Math.round(reach / 60) + ' min' : Math.round(reach) + ' s';
-  $('#caphint').innerHTML = step ? `With ${own && own <= limit ? 'the frame cap' : 'the safety limit'} at <b>${cap}</b>, this interval holds for videos up to <b>${span}</b>. Longer videos are thinned to ${cap} evenly spaced frames; ${own && own <= limit ? 'raise the cap below, or set it to 0,' : 'raise the safety limit below'} to avoid that.` : '';
+  $('#caphint').innerHTML = !step ? '' : L(`With ${own && own <= limit ? 'the frame cap' : 'the safety limit'} at <b>${cap}</b>, this interval holds for videos up to <b>${span}</b>. Longer videos are thinned to ${cap} evenly spaced frames; ${own && own <= limit ? 'raise the cap below, or set it to 0,' : 'raise the safety limit below'} to avoid that.`,
+    `${own && own <= limit ? '画面上限' : '安全上限'}为 <b>${cap}</b> 时，这个间隔适用于不超过 <b>${span}</b> 的视频。更长的视频会被稀释为 ${cap} 张平均分布的画面；要避免这种情况，请${own && own <= limit ? '调高下方的上限或设为 0' : '调高下方的安全上限'}。`);
 }
 document.addEventListener('input', capHint); document.addEventListener('change', capHint); setInterval(capHint, 1500);
 $$('.card').forEach(c => { c.addEventListener('change', onSetting); c.addEventListener('input', ev => { if (ev.target.type !== 'radio' && ev.target.type !== 'checkbox') onSetting(ev); }); });

@@ -971,6 +971,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/job":
             with lock:
                 return self._json(with_estimates(job))
+        if re.fullmatch(r"/ui/[a-z0-9_]+\.js", path) and (ROOT / path.lstrip("/")).is_file():
+            return self._send(200, (ROOT / path.lstrip("/")).read_bytes(), "text/javascript; charset=utf-8")
         if path.startswith("/runs/") and path.endswith("/report.html"):
             target = (RUNS / path.split("/")[2] / "report.html").resolve()
             if RUNS.resolve() in target.parents and target.exists():
