@@ -92,7 +92,12 @@ saved keys in `%LOCALAPPDATA%\VideoWatch` (set `VIDEO_WATCH_HOME` to move it).
 
 ## Several topics at once
 
-Press Watch again while a run is going to start another one: each run gets its own progress card,
+"What to watch" holds topics, shown as tabs: "+ New topic" adds one. Each topic has its own report
+title and its own items, and is kept between sessions. Watch starts the topic you are on; "Watch all
+topics" starts every topic that has links, each as its own run. A tab shows a dot while its topic is
+watching.
+
+You can also press Watch again while a run is going to start another one: each run gets its own progress card,
 named by its report title, with its own Stop button, log and estimates, and stopping one leaves the
 others running. Give each run its own title; a second run with the same title as one still watching
 is refused, so a double click cannot start it twice. Runs share the computer and your model's rate
