@@ -26,6 +26,9 @@ button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid var(--li
 button:hover{border-color:var(--accent)}button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;padding:10px 22px}
 button:disabled{opacity:.5;cursor:default}button.link{border:0;background:none;color:var(--mute);padding:2px 4px;font-size:13px}
 .entry{border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;background:var(--bg)}
+.rgrp{float:right;font-size:13px;text-transform:none;letter-spacing:0}.rgrp button.on{font-weight:700;text-decoration:underline}
+.runs li.rgroup{display:block;padding:6px 0}.rgroup summary{color:var(--ink);margin:0;font-size:14px}.rgroup summary .gdel{margin-left:8px}
+.rgroup ul.runs{margin:4px 0 4px 18px}
 .entry.drop{outline:2px dashed var(--accent);outline-offset:2px}
 .entry-head{display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:14px}
 .hint{font-size:12.5px;color:var(--mute);margin:4px 0 0}
@@ -108,7 +111,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
   </template>
 
   <div class="card">
-    <h2>Past reports</h2>
+    <h2>Past reports <span class="rgrp"><button class="link" data-rgroup="run">by run</button> · <button class="link" data-rgroup="date">by date</button> · <button class="link" data-rgroup="category">by category</button></span></h2>
     <p class="hint" id="storeline" style="margin:0 0 8px"></p>
     <ul class="runs" id="runs"><li class="hint">None yet.</li></ul>
     <p style="margin:12px 0 0"><button class="link" id="openruns">open reports folder</button> · <button class="link" id="freework">delete working files</button> · <button class="link danger" id="delall">delete all reports</button></p>
@@ -718,9 +721,69 @@ async function poll() {
 function startPolling() { if (!polling) polling = setInterval(poll, 1000); poll(); }
 const openFolder = id => api('/api/open', {id}).catch(e => alert(e.message));
 const size = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.ceil(b / 1024) + ' KB';
+// Past reports, folded: by run (the reports one run wrote), by date, or by category.
+let runGroup = 'run';
+try { runGroup = localStorage.getItem('vw-rgroup') || 'run'; } catch (_) {}
+const short = (t, strip) => strip && t.startsWith(strip + ': ') ? t.slice(strip.length + 2) : t;
+function batchTitle(rs) {
+  const heads = rs.map(r => (r.title || '').split(': ')[0]);
+  return heads.every(h => h && h === heads[0]) ? heads[0] : (rs.find(r => r.id === r.batch) || rs[rs.length - 1]).title || 'Untitled run';
+}
+// The words every title in a fold starts with (a course name, say), cut back to a natural break.
+function sharedStart(all) {
+  const buckets = {};   // the opening most titles share (a fold can also hold an overview and odd ones out)
+  for (const t of all) (buckets[t.slice(0, 12)] ||= []).push(t);
+  const titles = Object.values(buckets).sort((a, b) => b.length - a.length)[0] || [];
+  if (titles.length < 3) return '';
+  let p = titles[0];
+  for (const t of titles) { let i = 0; while (i < p.length && i < t.length && p[i] === t[i]) i++; p = p.slice(0, i); }
+  const cut = Math.max(p.lastIndexOf(' '), p.lastIndexOf('）'), p.lastIndexOf('】'), p.lastIndexOf(')'), p.lastIndexOf('|'), p.lastIndexOf('｜'));
+  p = cut > 0 ? p.slice(0, cut + 1) : '';
+  return p.trim().length >= 12 ? p : '';
+}
+function runRow(r, s, strip, common = '') {
+  return `<li><span><a href="/runs/${r.id}/report.html" target="_blank">${esc((t => common && t.startsWith(common) ? t.slice(common.length).trim() || t : t)(short(r.title || 'Untitled run', strip)))}</a> <span class="hint">${r.started.replace('T', ' ')} · ${r.overview ? L('overview of ' + r.items + ' videos', r.items + ' 个视频的总览') : L(r.items + ' item' + (r.items > 1 ? 's' : '') + (r.summary ? ' + combined summary' : ''), r.items + ' 个条目' + (r.summary ? ' + 综合摘要' : ''))} · ${esc(r.mode)} · ${size(r.size)}${r.errors ? ' · ' + L(r.errors + ' failed', r.errors + ' 个失败') : ''}${r.exported ? ' · copy saved' : ''}</span></span><span class="acts"><button class="link" onclick="openFolder('${r.id}')">folder</button>${s.settings.export_dir ? ` <button class="link" onclick="saveCopy('${r.id}')">save copy</button>` : ''} <button class="link danger" onclick="delRun('${r.id}')">delete</button></span></li>`;
+}
+function showRuns(s) {
+  $$('.rgrp button').forEach(b => b.classList.toggle('on', b.dataset.rgroup === runGroup));
+  if (!s.runs.length) { $('#runs').innerHTML = '<li class="hint">None yet.</li>'; return; }
+  const groups = new Map();
+  for (const r of s.runs) {
+    const k = runGroup === 'date' ? r.started.slice(0, 10) : runGroup === 'category' ? (r.category || 'Uncategorised') : r.batch;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const keys = [...groups.keys()];
+  if (runGroup === 'category') keys.sort((a, b) => (a === 'Uncategorised') - (b === 'Uncategorised') || a.localeCompare(b));
+  let open = {};
+  try { open = JSON.parse(localStorage.getItem('vw-ropen') || '{}'); } catch (_) {}
+  $('#runs').innerHTML = keys.map((k, gi) => {
+    const rs = groups.get(k);
+    if (runGroup === 'run' && rs.length === 1) return runRow(rs[0], s, '');
+    const head = runGroup === 'run' ? batchTitle(rs) : k, key = runGroup + ':' + k;
+    const isOpen = key in open ? open[key] : gi === 0 && runGroup !== 'run';
+    const common = sharedStart(rs.map(r => short(r.title || '', runGroup === 'run' ? head : '')));
+    return `<li class="rgroup"><details data-k="${esc(key)}"${isOpen ? ' open' : ''}><summary><b>${esc(head)}</b> <span class="hint">${L(rs.length + (rs.length === 1 ? ' report' : ' reports'), rs.length + ' 份报告')} · ${rs[0].started.replace('T', ' ').slice(0, 16)} · ${size(rs.reduce((a, r) => a + r.size, 0))}</span>`
+      + `<button class="link danger gdel" data-ids="${rs.map(r => r.id).join(',')}">${L('delete these', '删除这些')}</button></summary>`
+      + (common ? `<div class="hint" style="margin:2px 0 0 18px">${esc(common)}</div>` : '')
+      + `<ul class="runs">${rs.map(r => runRow(r, s, runGroup === 'run' ? head : '', common)).join('')}</ul></details></li>`;
+  }).join('');
+  $$('#runs details').forEach(d => d.addEventListener('toggle', () => {
+    try { const o = JSON.parse(localStorage.getItem('vw-ropen') || '{}'); o[d.dataset.k] = d.open; localStorage.setItem('vw-ropen', JSON.stringify(o)); } catch (_) {}
+  }));
+  $$('#runs .gdel').forEach(b => b.onclick = ev => {
+    ev.preventDefault(); ev.stopPropagation();
+    const ids = b.dataset.ids.split(',');
+    remove({ids}, L(`Delete these ${ids.length} reports from this computer? This cannot be undone. Copies saved to your export folder are not touched.`,
+                    `从本机删除这 ${ids.length} 份报告？此操作无法撤销。保存到导出文件夹的副本不受影响。`));
+  });
+}
+let lastRunsState = null;
+$$('.rgrp button').forEach(b => b.onclick = () => { runGroup = b.dataset.rgroup; try { localStorage.setItem('vw-rgroup', runGroup); } catch (_) {} if (lastRunsState) showRuns(lastRunsState); });
 async function refreshRuns() {
   const s = await api('/api/state');
-  $('#runs').innerHTML = s.runs.length ? s.runs.map(r => `<li><span><a href="/runs/${r.id}/report.html" target="_blank">${esc(r.title || 'Untitled run')}</a> <span class="hint">${r.started.replace('T', ' ')} · ${r.overview ? L('overview of ' + r.items + ' videos', r.items + ' 个视频的总览') : L(r.items + ' item' + (r.items > 1 ? 's' : '') + (r.summary ? ' + combined summary' : ''), r.items + ' 个条目' + (r.summary ? ' + 综合摘要' : ''))} · ${esc(r.mode)} · ${size(r.size)}${r.errors ? ' · ' + L(r.errors + ' failed', r.errors + ' 个失败') : ''}${r.exported ? ' · copy saved' : ''}</span></span><span class="acts"><button class="link" onclick="openFolder('${r.id}')">folder</button>${s.settings.export_dir ? ` <button class="link" onclick="saveCopy('${r.id}')">save copy</button>` : ''} <button class="link danger" onclick="delRun('${r.id}')">delete</button></span></li>`).join('') : '<li class="hint">None yet.</li>';
+  lastRunsState = s;
+  showRuns(s);
   const st = s.storage;
   $('#storeline').textContent = L(`${st.runs} run${st.runs === 1 ? '' : 's'} using ${size(st.bytes)} on this computer` + (st.work_bytes ? `, of which ${size(st.work_bytes)} is working files that can be deleted without losing any report.` : '.'),
     `${st.runs} 次运行，在本机占用 ${size(st.bytes)}` + (st.work_bytes ? `，其中 ${size(st.work_bytes)} 是工作文件，删除后不会丢失任何报告。` : '。'));

@@ -432,15 +432,41 @@ def _environment() -> dict:
     }
 
 
-def tree_size(path: Path) -> int:
+_sizes: dict[str, tuple[float, int]] = {}   # folder -> (when measured, bytes)
+
+
+def _walk_size(path: str) -> int:
+    """Bytes under a folder. scandir reads sizes from the directory listing itself, which on Windows
+    is many times faster than asking for each of thousands of frame files one by one."""
     total = 0
-    for root, _dirs, files in os.walk(path):
-        for f in files:
-            try:
-                total += os.path.getsize(os.path.join(root, f))
-            except OSError:
-                pass
+    try:
+        with os.scandir(path) as it:
+            for e in it:
+                try:
+                    total += _walk_size(e.path) if e.is_dir(follow_symlinks=False) else e.stat(follow_symlinks=False).st_size
+                except OSError:
+                    pass
+    except OSError:
+        pass
     return total
+
+
+def tree_size(path: Path) -> int:
+    """Folder size, remembered: a finished run's folder only changes when the app deletes from it
+    (which calls forget_sizes), so it is measured once; a run in progress is measured at most every 30 s."""
+    key = str(path)
+    now = time.time()
+    hit = _sizes.get(key)
+    live = any(rid in key for rid in running_ids()) or "uploads" in key
+    if hit and (not live or now - hit[0] < 30):
+        return hit[1]
+    n = _walk_size(key)
+    _sizes[key] = (now, n)
+    return n
+
+
+def forget_sizes() -> None:
+    _sizes.clear()
 
 
 def run_dirs() -> list[Path]:
@@ -460,12 +486,15 @@ def run_title(r: dict) -> str:
 
 def list_runs() -> list[dict]:
     out = []
-    for d in run_dirs()[:200]:
+    for d in run_dirs()[:2000]:
         meta = d / "run.json"
         if meta.exists() and (d / "report.html").exists():
             try:
                 r = json.loads(meta.read_text(encoding="utf-8"))
                 out.append({"id": r["id"], "title": run_title(r), "started": r["started"],
+                            # reports written by one run share its batch id; the page folds them together
+                            "batch": r.get("batch") or r["id"],
+                            "category": next((u.get("category") for u in r["units"] if u.get("category")), ""),
                             "items": len(r["units"]) or len(r.get("overview") or []), "overview": bool(r.get("overview")),
                             "summary": bool(r.get("summary")),
                             "errors": sum(1 for u in r["units"] if u.get("error")),
@@ -600,6 +629,7 @@ def delete_runs(ids: list[str] | None, what: str) -> dict:
     busy = busy_ids()
     dirs = run_dirs() if ids is None else [d for d in map(run_dir, ids) if d]
     before = sum(tree_size(d) for d in dirs)
+    forget_sizes()   # sizes change from here on
     n = 0
     for d in dirs:
         if d.name in busy or d.name.split("-0")[0] in busy:
@@ -1102,6 +1132,7 @@ def run_job(run_id: str, title: str, units: list[dict], s: dict) -> None:
         with lock:
             job.update(status="cancelled" if cancel.is_set() else "done", report=reports[0]["url"], reports=reports,
                        path=reports[0]["path"], failed=failed, exported=reports[0]["exported"], ended_at=time.time())
+        forget_sizes()   # working files were just removed and new report folders written
         pruned = prune_runs(max(int(s["keep_runs"]), len(groups)) if int(s["keep_runs"]) else 0)
         if pruned:
             log(f"removed {pruned} older report(s); keeping the newest {int(s['keep_runs'])}")

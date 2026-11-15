@@ -221,6 +221,14 @@ none is saved. "check the key" and "load my models" cost nothing. The Claude API
 Anthropic SDK with server-side refusal fallbacks; Other APIs speak OpenAI Chat Completions. Reports
 show tokens and, for Claude, an estimated cost.
 
+## Past reports
+
+Past reports folds the list: by run (all the reports one run wrote, under the run's title, with the
+words every title in it shares shown once), by date, or by category. Each fold shows how many reports
+it holds and their size, and "delete these" removes the whole fold. Folds remember whether you left
+them open. Folder sizes are measured once and remembered, so the list opens in about a second even
+with many large runs.
+
 ## Library
 
 Below Past reports, the Library lists every video watched, grouped by date or by category. The model
