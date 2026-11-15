@@ -237,7 +237,8 @@ def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage) -> dic
             status(f"preparing video {vi} of {n}")
             v = prepare_video(src, udir / f"v{vi}", s, unit.get("start"), unit.get("end"),
                               lambda m, vi=vi: log(f"video {vi}: {m}"),
-                              stage=lambda name, vi=vi: stage(name if n == 1 else f"v{vi} {name}"))
+                              stage=lambda name, vi=vi: stage(name if n == 1 else f"v{vi} {name}"),
+                              cancelled=cancel.is_set)
             v["id"] = f"v{vi}"
             for k, f in enumerate(v["frames"], 1):
                 f.update(id=f"v{vi}f{k:03d}", round=0)
@@ -416,7 +417,8 @@ def run_unit(unit: dict, udir: Path, s: dict, log, status, cancel, stage) -> dic
                         skipped += 1
                         continue
                     wanted.append((min(t, max(0.0, v["duration"] - 0.25)), str(q.get("why") or "").strip()[:200]))
-                got = grab_frames(v["video_path"], udir / vid / "frames", [t for t, _ in wanted], int(s["resolution"]), f"r{rnd}")
+                got = grab_frames(v["video_path"], udir / vid / "frames", [t for t, _ in wanted], int(s["resolution"]), f"r{rnd}",
+                                  cancel.is_set)
                 for (t, path), (_, why) in zip(got, wanted):
                     if not path:
                         skipped += 1

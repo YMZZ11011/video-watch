@@ -20,7 +20,6 @@ from transcribe import filter_range, format_transcript, parse_vtt  # noqa: E402
 from whisper import load_api_keys, transcribe_video  # noqa: E402
 
 # No model reads more than a few hundred images usefully in one sitting.
-cancelled = lambda: False   # noqa: E731  (the app points this at its Stop flag)
 HARD_CAP = 400     # default safety limit on frames per video (the "frame_limit" setting)
 MAX_LIMIT = 5000   # the highest that limit can be set
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -30,8 +29,14 @@ def fmt(t: float) -> str:
     return F.format_time(t)
 
 
-def grab_frames(video: str, out_dir: Path, times: list[float], resolution: int, tag: str) -> list[tuple[float, str | None]]:
-    """One exact frame per timestamp. Returns (time, path-or-None) in input order."""
+def never() -> bool:
+    return False
+
+
+def grab_frames(video: str, out_dir: Path, times: list[float], resolution: int, tag: str,
+                cancelled=never) -> list[tuple[float, str | None]]:
+    """One exact frame per timestamp. Returns (time, path-or-None) in input order.
+    cancelled: the run's Stop flag (each run has its own, so stopping one leaves the others)."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
     def one(item: tuple[int, float]) -> tuple[float, str | None]:
@@ -52,7 +57,7 @@ def grab_frames(video: str, out_dir: Path, times: list[float], resolution: int, 
         return list(ex.map(one, enumerate(times)))
 
 
-def compress_frames(frames: list[dict], width: int, quality: int) -> tuple[int, int]:
+def compress_frames(frames: list[dict], width: int, quality: int, cancelled=never) -> tuple[int, int]:
     """Smaller copies of frames for the report gallery (sets f["small"]). Returns bytes (before, after).
     quality is 10..100; a copy that does not come out smaller is dropped."""
     q = str(max(2, min(31, round(31 - quality / 100 * 29))))
@@ -115,7 +120,8 @@ def _parse_subs(dl: dict, log) -> tuple[list[dict], str | None]:
         return [], None
 
 
-def prepare_video(source: str, vdir: Path, s: dict, start: str | None, end: str | None, log, stage=None) -> dict:
+def prepare_video(source: str, vdir: Path, s: dict, start: str | None, end: str | None, log, stage=None,
+                  cancelled=never) -> dict:
     stage = stage or (lambda name: None)
     mode = s["mode"]
     cookies = s.get("cookies_browser") or None
@@ -206,7 +212,7 @@ def prepare_video(source: str, vdir: Path, s: dict, start: str | None, end: str 
 
     def timed(times: list[float], reason: str, origin: str, tag: str) -> list[dict]:
         times = [min(t, max(0.0, duration - 0.25)) for t in times]
-        got = grab_frames(video_path, fdir, times, res, tag)
+        got = grab_frames(video_path, fdir, times, res, tag, cancelled)
         missed = sum(1 for _, p in got if p is None)
         if missed:
             notes.append(f"{missed} frame(s) could not be extracted")

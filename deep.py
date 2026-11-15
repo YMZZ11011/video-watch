@@ -87,7 +87,7 @@ def _levels_spec(t: dict) -> str:
     ])
 
 
-def key_frames(v: dict, notes: str, s: dict, udir: Path, log) -> list[dict]:
+def key_frames(v: dict, notes: str, s: dict, udir: Path, log, cancelled=None) -> list[dict]:
     """The frames worth showing for one video, re-captured at full resolution."""
     have = {f["id"]: f for f in v["frames"]}
     wanted: list[str] = []
@@ -101,7 +101,8 @@ def key_frames(v: dict, notes: str, s: dict, udir: Path, log) -> list[dict]:
         return [have[i] for i in wanted]
     width = min(HD_WIDTH, int(v.get("width") or HD_WIDTH))
     if width > int(s.get("resolution") or 512):
-        got = grab_frames(v["video_path"], udir / v["id"] / "hd", [have[i]["t"] for i in wanted], width, "hd")
+        got = grab_frames(v["video_path"], udir / v["id"] / "hd", [have[i]["t"] for i in wanted], width, "hd",
+                          cancelled or (lambda: False))
         for i, (_, path) in zip(wanted, got):
             if path:
                 have[i]["hd"] = path
@@ -202,7 +203,7 @@ def write(videos: list[dict], notes: dict, task: str, s: dict, engine: str, ask,
           cancel, frame_lines, sees: bool = True) -> dict:
     """Run stages 2-4. Returns {"deep": {...}, "analysis": text, "category": str}."""
     at_once = max(1, min(int(s.get("agent_parallel") or 4), 12))
-    keys = {v["id"]: key_frames(v, notes.get(v["id"], ""), s, udir, log) for v in videos}
+    keys = {v["id"]: key_frames(v, notes.get(v["id"], ""), s, udir, log, cancel.is_set) for v in videos}
     sections: dict[str, dict] = {}
     multi = len(videos) > 1
     done = [0]

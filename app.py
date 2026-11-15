@@ -72,18 +72,23 @@ def _tracked_init(self, *args, **kwargs):
     if os.name == "nt":
         kwargs.setdefault("creationflags", subprocess.CREATE_NO_WINDOW)
     _popen_init(self, *args, **kwargs)
+    self.vw_where = f"{self.args} {kwargs.get('cwd') or ''}"   # which run it belongs to: its run folder appears here
     children[:] = [p for p in children if p.poll() is None] + [self]
 
 
 subprocess.Popen.__init__ = _tracked_init
 
 
-def kill_children() -> int:
-    """End every running child process except the app window. Returns how many."""
+def kill_children(run_id: str | None = None) -> int:
+    """End running child processes except the app window: all of them, or only one run's (every
+    download, ffmpeg call and model CLI of a run works inside its run folder). Returns how many."""
     n = 0
     for p in list(children):
         cmd = p.args if isinstance(p.args, (list, tuple)) else [p.args]
         if p.poll() is not None or getattr(p, "keep", False) or "taskkill" in str(cmd[0]).lower():
+            continue
+        # "...527" must not match the folder of a run started the same second ("...527b")
+        if run_id and not re.search(re.escape(run_id) + r"(?![0-9A-Za-z])", getattr(p, "vw_where", "")):
             continue
         n += 1
         if os.name == "nt":
@@ -93,20 +98,28 @@ def kill_children() -> int:
     return n
 
 
-def stop_run() -> None:
-    """Stop was pressed: keep killing child processes until the run has wound down
-    (a stage that is cut short may start one more before it notices)."""
-    cancel.set()
-    log("stop requested: ending downloads, frame extraction and model calls")
+def stop_run(run_id: str) -> None:
+    """Stop was pressed on one run: keep killing that run's child processes until it has wound
+    down (a stage that is cut short may start one more before it notices). Other runs carry on."""
+    j = jobs.get(run_id)
+    if not j:
+        return
+    j["cancel"].set()
+    log("stop requested: ending downloads, frame extraction and model calls", j)
 
     def sweep() -> None:
         for _ in range(120):
-            kill_children()
-            if job.get("status") != "running":
+            kill_children(run_id)
+            if j.get("status") != "running":
                 return
             time.sleep(0.5)
 
     threading.Thread(target=sweep, daemon=True).start()
+
+
+def running_ids() -> list[str]:
+    with lock:
+        return [k for k, j in jobs.items() if j.get("status") == "running"]
 
 import api_engines  # noqa: E402
 import deep  # noqa: E402
@@ -114,7 +127,6 @@ import i18n  # noqa: E402
 import llm  # noqa: E402
 import report  # noqa: E402
 from engine import agent_pool, run_unit  # noqa: E402
-import pipeline  # noqa: E402
 from pipeline import HARD_CAP, MAX_LIMIT, compress_frames  # noqa: E402
 from config import get_config  # noqa: E402  (watchlib, on sys.path via pipeline)
 from whisper import load_api_keys  # noqa: E402
@@ -180,10 +192,8 @@ LIMITS = {
 }
 
 lock = threading.Lock()
-job: dict = {"status": "idle"}
-cancel = threading.Event()
+jobs: dict[str, dict] = {}   # run id -> its progress; several runs can go at once, each with its own Stop
 quit_event = threading.Event()
-pipeline.cancelled = cancel.is_set   # lets downloads and frame extraction notice Stop
 seen = {"ping": 0.0, "bye": 0.0}   # when a UI window last checked in / said it was closing
 
 # ---- time estimates, learned from past runs ----
@@ -209,6 +219,10 @@ def est_model(engine: str, frames: int | None, dynamic: bool) -> float:
     return rate * (frames + 5) * (1.5 if dynamic and not any(h.get("dynamic") for h in same) else 1.0)
 
 
+def public(j: dict) -> dict:
+    return {k: v for k, v in j.items() if k != "cancel"}
+
+
 def with_estimates(j: dict) -> dict:
     """Copy of the job with elapsed/remaining seconds filled in for the UI."""
     now = time.time()
@@ -231,7 +245,7 @@ def with_estimates(j: dict) -> dict:
         u["remaining"] = round(rem)
         left += rem
         units.append(u)
-    out = {**j, "units": units, "log": j.get("log", [])[-300:]}
+    out = {**public(j), "units": units, "log": j.get("log", [])[-300:]}
     if j.get("started_at"):
         out["elapsed"] = round((j.get("ended_at") or now) - j["started_at"])
         out["remaining"] = round(left / max(1, int(j.get("parallel") or 1)))
@@ -487,9 +501,8 @@ def storage() -> dict:
             "work_bytes": sum(tree_size(d / "work") for d in dirs if (d / "work").exists()) + up}
 
 
-def busy_id() -> str | None:
-    with lock:
-        return job.get("id") if job.get("status") == "running" else None
+def busy_ids() -> set[str]:
+    return set(running_ids())
 
 
 def run_dir(run_id: str) -> Path | None:
@@ -501,12 +514,12 @@ def run_dir(run_id: str) -> Path | None:
 def delete_runs(ids: list[str] | None, what: str) -> dict:
     """Delete whole runs ("all") or only their working files ("work"). ids=None means every run.
     The run in progress is never touched."""
-    busy = busy_id()
+    busy = busy_ids()
     dirs = run_dirs() if ids is None else [d for d in map(run_dir, ids) if d]
     before = sum(tree_size(d) for d in dirs)
     n = 0
     for d in dirs:
-        if d.name == busy:
+        if d.name in busy or d.name.split("-0")[0] in busy:
             continue
         target = d / "work" if what == "work" else d
         if target.exists():
@@ -523,8 +536,8 @@ def prune_runs(keep: int) -> int:
     """Keep only the newest `keep` runs (0 = keep everything)."""
     if keep <= 0:
         return 0
-    busy = busy_id()
-    old = [d.name for d in run_dirs()[keep:] if d.name != busy]
+    busy = busy_ids()
+    old = [d.name for d in run_dirs()[keep:] if d.name not in busy]
     return delete_runs(old, "all")["deleted"] if old else 0
 
 
@@ -593,12 +606,15 @@ def plan_units(entries: list[dict]) -> list[dict]:
     return units
 
 
-def log(msg: str) -> None:
+def log(msg: str, j: dict | None = None) -> None:
+    """A progress line: to app.log, and when it belongs to a run, to that run's log and run.log."""
     line = f"{datetime.now():%H:%M:%S}  {msg}"
-    with lock:
-        job.setdefault("log", []).append(line)
-        run_id = job.get("id")
-    print(line, file=sys.stderr, flush=True)
+    run_id = None
+    if j is not None:
+        with lock:
+            j.setdefault("log", []).append(line)
+            run_id = j.get("id")
+    print(line if not run_id else f"{line}  [{run_id}]", file=sys.stderr, flush=True)
     if run_id:  # every run keeps its own log on disk
         try:
             with open(RUNS / run_id / "run.log", "a", encoding="utf-8") as fh:
@@ -607,7 +623,7 @@ def log(msg: str) -> None:
             pass
 
 
-def plan_reports(done: list[dict], s: dict, title: str) -> list[dict]:
+def plan_reports(done: list[dict], s: dict, title: str, log=log, cancel: threading.Event | None = None) -> list[dict]:
     """Divide a run's analyses into reports: [{"title", "units"}]. An analysis is one video, or one
     bundle the user asked to be watched together; a bundle is never split."""
     def name(u: dict) -> str:
@@ -672,7 +688,7 @@ def plan_reports(done: list[dict], s: dict, title: str) -> list[dict]:
 SUMMARY_ITEM_CHARS = 30_000   # of each analysis, in the orchestrator's prompt
 
 
-def summarise(units: list[dict], s: dict, title: str, work: Path) -> dict:
+def summarise(units: list[dict], s: dict, title: str, work: Path, cancel: threading.Event | None = None) -> dict:
     """The orchestrator pass: one model call that reads every analysis of a batch and writes the
     combined summary shown before them. Returns {"analysis", "engine", "model", "seconds", "cost", "error"}."""
     t0 = time.time()
@@ -770,6 +786,12 @@ def go_deeper(run_id: str, ui: int, key: str, focus: str) -> str:
 
 
 def run_job(run_id: str, title: str, units: list[dict], s: dict) -> None:
+    job = jobs[run_id]
+    cancel: threading.Event = job["cancel"]
+
+    def log(msg: str) -> None:   # this run's own log
+        globals()["log"](msg, job)
+
     rdir = RUNS / run_id
     started = datetime.now().isoformat(timespec="seconds")
     s = {**s, "_categories": categories()}   # so the model reuses the library's existing categories
@@ -825,11 +847,12 @@ def run_job(run_id: str, title: str, units: list[dict], s: dict) -> None:
         if s["report_compress"] and s["report_gallery"]:
             frames = [f for u in done for v in u["videos"] for f in v["frames"]]
             if frames:
-                before, after = compress_frames(frames, int(s["report_image_width"]), int(s["report_image_quality"]))
+                before, after = compress_frames(frames, int(s["report_image_width"]), int(s["report_image_quality"]),
+                                                cancelled=cancel.is_set)
                 log(f"compressed {len(frames)} gallery images: {before / 1048576:.1f} MB -> {after / 1048576:.1f} MB")
         with lock:
             job["phase"] = "deciding how to group the reports" if len(done) > 1 else "writing the report"
-        groups = plan_reports(done, s, title)
+        groups = plan_reports(done, s, title, log, cancel)
         analysed = [u for u in done if u.get("analysis")]
         if s["batch_summary"] and len(groups) > 1 and len(analysed) > 1:
             # The run became several reports: the batch as a whole still gets one combined summary.
@@ -846,7 +869,7 @@ def run_job(run_id: str, title: str, units: list[dict], s: dict) -> None:
                 with lock:
                     job["phase"] = f"the orchestrator ({llm.ENGINES[s['engine']]}) is writing the combined summary"
                 log(f"writing the combined summary of {len(members)} analyses" + (f" for \"{g['title']}\"" if g["title"] else ""))
-                g["summary"] = summarise(members, s, g["title"], rdir / "work" / f"summary{gi + 1}")
+                g["summary"] = summarise(members, s, g["title"], rdir / "work" / f"summary{gi + 1}", cancel)
                 if g["summary"]["error"]:
                     log(f"combined summary failed: {g['summary']['error']}")
                 else:
@@ -968,9 +991,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/state":
             return self._json({"settings": load_settings(), "defaults": DEFAULTS, "env": environment(),
                                "runs": list_runs(), "storage": storage(), "library": library()})
-        if path == "/api/job":
+        if path == "/api/jobs":   # every run of this session, newest first
             with lock:
-                return self._json(with_estimates(job))
+                return self._json({"jobs": [with_estimates(j) for j in sorted(jobs.values(), key=lambda j: -j["started_at"])]})
+        if path == "/api/job":   # older callers (the installer asks whether anything is running)
+            with lock:
+                live = [j for j in jobs.values() if j.get("status") == "running"]
+                latest = max(jobs.values(), key=lambda j: j["started_at"], default=None)
+                return self._json(with_estimates(live[0] if live else latest) if latest else {"status": "idle"})
         if re.fullmatch(r"/ui/[a-z0-9_]+\.js", path) and (ROOT / path.lstrip("/")).is_file():
             return self._send(200, (ROOT / path.lstrip("/")).read_bytes(), "text/javascript; charset=utf-8")
         if path.startswith("/runs/") and path.endswith("/report.html"):
@@ -1011,22 +1039,34 @@ class Handler(BaseHTTPRequestHandler):
                 problems = [p for p in (llm.problem(e, env["signed_in"].get(e) if e in llm.CLIS else None, s) for e in sorted(wanted)) if p]
             if problems:
                 return self._json({"error": " ".join(problems)}, 400)
+            title = str(body.get("title") or "").strip()[:200]
             with lock:
-                if job.get("status") == "running":
-                    return self._json({"error": "A run is already in progress."}, 409)
-                run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
-                cancel.clear()
-                job.clear()
+                if title and any(j["title"] == title and j.get("status") == "running" for j in jobs.values()):
+                    return self._json({"error": f'A run titled "{title}" is already watching. Give this one another title, '
+                                                "or wait for it to finish."}, 409)
+                stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                run_id, n = stamp, 1
+                while run_id in jobs or (RUNS / run_id).exists():   # two runs started in the same second
+                    n += 1
+                    run_id = f"{stamp}{chr(96 + n)}"
                 (RUNS / run_id).mkdir(parents=True, exist_ok=True)
-                job.update(status="running", id=run_id, log=[], started_at=time.time(), parallel=s["parallel"], units=[
+                jobs[run_id] = {"status": "running", "id": run_id, "title": title, "log": [], "started_at": time.time(),
+                                "parallel": s["parallel"], "cancel": threading.Event(), "units": [
                     {"label": u["urls"][0] if len(u["urls"]) == 1 else f"Bundle of {len(u['urls'])} videos",
                      "status": "queued", "detail": "", "engine": u.get("engine") or s["engine"],
-                     "videos": len(u["urls"]), "stages": []} for u in units])
-            threading.Thread(target=run_job, args=(run_id, str(body.get("title") or "").strip()[:200], units, s), daemon=True).start()
+                     "videos": len(u["urls"]), "stages": []} for u in units]}
+            threading.Thread(target=run_job, args=(run_id, title, units, s), daemon=True).start()
             return self._json({"id": run_id})
         if path == "/api/cancel":
-            if job.get("status") == "running":
-                stop_run()
+            ids = [str(body["id"])] if body.get("id") else running_ids()
+            for rid in ids:
+                if jobs.get(rid, {}).get("status") == "running":
+                    stop_run(rid)
+            return self._json({"ok": True})
+        if path == "/api/dismiss":   # hide a finished run's progress card
+            with lock:
+                if jobs.get(str(body.get("id")), {}).get("status") != "running":
+                    jobs.pop(str(body.get("id")), None)
             return self._json({"ok": True})
         if path == "/api/bye":  # a window is closing (or reloading: then a ping follows)
             seen["bye"] = time.time()
@@ -1179,7 +1219,7 @@ def main() -> None:
             if watch and seen["bye"] and now - seen["bye"] > 6 and seen["ping"] < seen["bye"]:
                 why = "the window was closed"  # it said goodbye and no window has checked in since
                 break
-            if watch and seen["ping"] and now - seen["ping"] > 600 and job.get("status") != "running":
+            if watch and seen["ping"] and now - seen["ping"] > 600 and not running_ids():
                 why = "no window has checked in for 10 minutes"
                 break
             time.sleep(0.5)
@@ -1188,10 +1228,10 @@ def main() -> None:
     print(f"{datetime.now():%Y-%m-%d %H:%M:%S}  stopping: {why} "
           f"(check-in {time.time() - seen['ping']:.0f}s ago, goodbye {time.time() - seen['bye']:.0f}s ago)",
           file=sys.stderr, flush=True)
-    if job.get("status") == "running":
-        stop_run()
-    cancel.set()  # stop any run in progress and give the model CLI a moment to be killed
-    time.sleep(1.5 if job.get("status") == "running" else 0)
+    live = running_ids()
+    for rid in live:   # stop every run in progress and give the model CLIs a moment to be killed
+        stop_run(rid)
+    time.sleep(1.5 if live else 0)
     server.shutdown()
     os._exit(0)
 

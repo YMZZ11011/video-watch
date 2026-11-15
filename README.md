@@ -90,6 +90,14 @@ the app inside it (one-time setup: `py -3.12 -m venv .build\venv`, then
 saved keys in `%LOCALAPPDATA%\VideoWatch` (set `VIDEO_WATCH_HOME` to move it).
 `Video Watch Setup.exe --silent --dir <folder>` installs without questions.
 
+## Several topics at once
+
+Press Watch again while a run is going to start another one: each run gets its own progress card,
+named by its report title, with its own Stop button, log and estimates, and stopping one leaves the
+others running. Give each run its own title; a second run with the same title as one still watching
+is refused, so a double click cannot start it twice. Runs share the computer and your model's rate
+limits, so many large runs at once each go slower.
+
 ## Progress, estimates and logs
 
 While a run is going, each item shows its current stage, elapsed time, a progress bar and an

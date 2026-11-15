@@ -47,7 +47,9 @@ pre.log{background:var(--bg);border:1px solid var(--line);border-radius:8px;padd
 .runs{list-style:none;margin:0;padding:0;font-size:14px}.runs li{padding:7px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;justify-content:space-between}
 .runs a{color:var(--accent);text-decoration:none}.lib h3{font-size:13px;margin:16px 0 2px;color:var(--mute);font-weight:600}.chip{font-size:12px;border:1px solid var(--line);border-radius:10px;padding:1px 8px;background:none;cursor:pointer;color:inherit;white-space:nowrap}.grp{float:right;font-size:13px}.grp button.on{font-weight:700;text-decoration:underline}.acts{white-space:nowrap}.link.danger{color:#b3261e}.hidden{display:none}
 .bar{height:5px;border-radius:3px;background:var(--line);margin:6px 0 2px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent);transition:width .8s linear}
-.overall{font-size:14px;margin:0 0 8px}.overall b{font-variant-numeric:tabular-nums}
+.overall{font-size:14px;margin:0 0 8px}
+.jobhead{display:flex;gap:10px;align-items:baseline;margin:0 0 10px}.jobhead .jt{font-weight:600;font-size:16px;flex:1;min-width:0;overflow-wrap:anywhere}
+.jobhead .jst{font-size:12px;text-transform:uppercase;letter-spacing:.04em}.jobcard .logbox summary{margin-top:10px}.overall b{font-variant-numeric:tabular-nums}
 details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
 </style>
 </head>
@@ -59,6 +61,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
     <h2>What to watch</h2>
     <label for="title">Report title (optional)</label>
     <input type="text" id="title" placeholder="e.g. Fed press conference review">
+    <p class="hint">Give each run its own title to tell them apart. Runs go on at the same time and can be stopped one by one.</p>
     <div id="entries" style="margin-top:14px"></div>
     <div class="row" style="justify-content:space-between">
       <button id="add" style="flex:none">+ Add another item</button>
@@ -77,14 +80,17 @@ details summary{cursor:pointer;font-size:14px;color:var(--mute);margin-top:12px}
     <div id="formerr" class="banner bad hidden"></div>
   </div>
 
-  <div class="card hidden" id="jobcard">
-    <h2>Progress</h2>
-    <p class="overall" id="overall"></p>
-    <ul class="units" id="units"></ul>
-    <div id="result"></div>
-    <button id="cancel" class="hidden" style="margin-top:12px">Stop</button>
-    <pre class="log" id="log"></pre>
-  </div>
+  <div id="jobs"></div>
+  <template id="jobtpl">
+    <div class="card jobcard">
+      <div class="jobhead"><span class="jt"></span><span class="st jst"></span><button class="link jx hidden">dismiss</button></div>
+      <p class="overall"></p>
+      <ul class="units"></ul>
+      <div class="result"></div>
+      <button class="stop hidden" style="margin-top:12px">Stop</button>
+      <details class="logbox" open><summary>Progress log</summary><pre class="log"></pre></details>
+    </div>
+  </template>
 
   <div class="card">
     <h2>Past reports</h2>
@@ -533,10 +539,24 @@ function onSetting(ev) {
 }
 
 /* ---------- run ---------- */
+// Every run of this session has its own card, so several topics can be watched at once.
+function jobCard(j) {
+  let card = $(`#jobs .jobcard[data-id="${j.id}"]`);
+  if (card) return card;
+  card = $('#jobtpl').content.firstElementChild.cloneNode(true);
+  card.dataset.id = j.id;
+  $('.stop', card).onclick = () => api('/api/cancel', {id: j.id});
+  $('.jx', card).onclick = () => api('/api/dismiss', {id: j.id}).then(() => card.remove());
+  $('#jobs').prepend(card);
+  return card;
+}
 function showJob(j) {
-  if (!j || j.status === 'idle') return;
-  $('#jobcard').classList.remove('hidden');
-  $('#units').innerHTML = (j.units || []).map(u => {
+  if (!j || !j.id) return;
+  const card = jobCard(j), q = sel => $(sel, card);
+  const first = (j.units || [])[0] || {};
+  q('.jt').textContent = j.title || (j.units.length === 1 ? first.label : '') || L(`Run started ${new Date(j.started_at * 1000).toTimeString().slice(0, 5)}`, `${new Date(j.started_at * 1000).toTimeString().slice(0, 5)} 开始的运行`);
+  q('.jst').textContent = j.status; q('.jst').className = 'st jst ' + j.status;
+  q('.units').innerHTML = (j.units || []).map(u => {
     const run = u.status === 'running';
     const pct = run ? Math.max(3, Math.min(97, 100 * u.elapsed / (u.elapsed + u.remaining + 1))) : 0;
     const eta = run ? ` · ${clock(u.elapsed)} elapsed · ${u.over ? 'taking longer than estimated' : 'about ' + rough(u.remaining) + ' left'}` : u.status === 'queued' ? ` · about ${rough(u.remaining)} once started` : u.elapsed != null ? ` · took ${clock(u.elapsed)}` : '';   // translated piece by piece in zh.js
@@ -544,28 +564,38 @@ function showJob(j) {
     return `<li><span class="st ${u.status}">${u.status}</span><span class="lb">${esc(u.label)}<br><span class="dt">${esc(ENGINE_NAMES[u.engine] || '')}${eta}${u.detail ? ' · ' + esc(u.detail) : ''}</span>${run ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}${stages ? `<br><span class="dt">${stages}</span>` : ''}</span></li>`;
   }).join('');
   const nDone = (j.units || []).filter(u => !['queued', 'running'].includes(u.status)).length;
-  $('#overall').innerHTML = j.elapsed == null ? '' : j.status === 'running'
+  q('.overall').innerHTML = j.elapsed == null ? '' : j.status === 'running'
     ? (nDone === j.units.length && j.phase ? L(`All <b>${nDone}</b> items watched · <b>${clock(j.elapsed)}</b> elapsed · now <b>${esc(j.phase)}</b>…`, `全部 <b>${nDone}</b> 个条目已看完 · 已用 <b>${clock(j.elapsed)}</b> · 正在${esc(j.phase)}…`)
     : L(`<b>${nDone} of ${j.units.length}</b> items finished · <b>${clock(j.elapsed)}</b> elapsed · about <b>${rough(j.remaining)}</b> left <span class="hint">(${j.estimate_basis ? 'estimate from ' + j.estimate_basis + (j.estimate_basis > 1 ? ' earlier analyses' : ' earlier analysis') : 'rough estimate; improves as you use it'})</span>`,
         `已完成 <b>${nDone}/${j.units.length}</b> 个条目 · 已用 <b>${clock(j.elapsed)}</b> · 预计还需 <b>${tr(rough(j.remaining))}</b> <span class="hint">（${j.estimate_basis ? '根据之前 ' + j.estimate_basis + ' 次分析估算' : '粗略估算，用得越多越准'}）</span>`))
     : L(`<b>${nDone} of ${j.units.length}</b> items finished in <b>${clock(j.elapsed)}</b>`, `<b>${nDone}/${j.units.length}</b> 个条目完成，用时 <b>${clock(j.elapsed)}</b>`);
-  const log = $('#log'), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
-  log.textContent = (j.log || []).join('\n');
-  if (atEnd) log.scrollTop = log.scrollHeight;
+  const log = q('.log'), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  const text = (j.log || []).join('\n');
+  if (log.textContent !== text) { log.textContent = text; if (atEnd) log.scrollTop = log.scrollHeight; }
   const running = j.status === 'running';
-  $('#cancel').classList.toggle('hidden', !running);
-  $('#run').disabled = running;
+  q('.stop').classList.toggle('hidden', !running);
+  q('.jx').classList.toggle('hidden', running);
   let r = '';
   const failedNote = j.failed ? L(` (${j.failed} item${j.failed > 1 ? 's' : ''} failed)`, `（${j.failed} 个条目失败）`) : '';
   if (j.report && (j.reports || []).length > 1) r = `<div class="banner">${j.status === 'cancelled' ? L('Stopped. Partial reports', '已停止。部分报告') : L(j.reports.length + ' reports ready', j.reports.length + ' 份报告已完成')}${failedNote}${L(':', '：')}<br>` + j.reports.map(x => `<a href="${x.url}" target="_blank">${esc(x.title || 'Untitled')}</a> · <button class="link" onclick="openFolder('${x.id}')">folder</button>${x.exported ? ' · copy saved' : ''}`).join('<br>') + `<br><span class="hint">${L("Progress log saved as run.log in the first report's folder", '进度日志保存在第一份报告文件夹中的 run.log')}</span></div>`;
   else if (j.report) r = `<div class="banner">${j.status === 'cancelled' ? L('Stopped. Partial report', '已停止。部分报告') : L('Report ready', '报告已完成')}${failedNote}${L(': ', '：')}<a href="${j.report}" target="_blank">${L('open report', '打开报告')}</a> · <button class="link" onclick="openFolder('${j.id}')">open folder</button><br><span class="hint">${esc(j.path)}<br>${L('Progress log saved next to it as run.log', '进度日志保存在同一位置的 run.log')}${j.exported ? '<br>' + L('Copy saved: ', '副本已保存：') + esc(j.exported) : ''}</span></div>`;
   else if (j.status === 'error') r = `<div class="banner bad">${L('Run failed: ', '运行失败：')}${esc(j.error)}</div>`;
-  $('#result').innerHTML = r;
-  if (!running && polling) { clearInterval(polling); polling = null; refreshRuns(); }
+  if (q('.result').innerHTML !== r) q('.result').innerHTML = r;
 }
 const clock = s => `${Math.floor(s / 60)}:${String(Math.round(s) % 60).padStart(2, '0')}`;
 const rough = s => s < 50 ? `${Math.max(10, Math.round(s / 10) * 10)} sec` : `${Math.max(1, Math.round(s / 60))} min`;
-const poll = () => api('/api/job').then(showJob).catch(() => {});
+const lastStatus = {};
+async function poll() {
+  let jobs = [];
+  try { jobs = (await api('/api/jobs')).jobs; } catch (_) { return; }
+  const ids = new Set(jobs.map(j => j.id));
+  $$('#jobs .jobcard').forEach(c => { if (!ids.has(c.dataset.id)) c.remove(); });
+  [...jobs].reverse().forEach(showJob);   // oldest first, each new card goes on top
+  let finished = false;
+  for (const j of jobs) { if (lastStatus[j.id] === 'running' && j.status !== 'running') finished = true; lastStatus[j.id] = j.status; }
+  if (finished) refreshRuns();
+  if (!jobs.some(j => j.status === 'running') && polling) { clearInterval(polling); polling = null; }
+}
 function startPolling() { if (!polling) polling = setInterval(poll, 1000); poll(); }
 const openFolder = id => api('/api/open', {id}).catch(e => alert(e.message));
 const size = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.ceil(b / 1024) + ' KB';
@@ -630,15 +660,16 @@ $('#title').oninput = saveDraft;
 $('#uilang').value = UI_LANG;
 $('#uilang').onchange = () => { try { localStorage.setItem('vw-ui', $('#uilang').value); } catch (_) {} location.reload(); };
 $('#quit').onclick = async () => { await api('/api/quit', {}).catch(() => {}); document.body.innerHTML = '<p style="padding:40px">Video Watch has stopped. You can close this window.</p>'; window.close(); };
-$('#cancel').onclick = () => api('/api/cancel', {});
 $('#run').onclick = async () => {
   const err = $('#formerr');
   err.classList.add('hidden');
   try {
     clearTimeout(saveTimer);
     settings = (await api('/api/settings', settings)).settings;
-    await api('/api/run', {title: $('#title').value, entries: readEntries()});
+    const r = await api('/api/run', {title: $('#title').value, entries: readEntries()});
+    lastStatus[r.id] = 'running';
     startPolling();
+    setTimeout(() => $(`#jobs .jobcard[data-id="${r.id}"]`)?.scrollIntoView({behavior: 'smooth', block: 'nearest'}), 1200);
   } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
 };
 function fillModels() {
@@ -760,9 +791,7 @@ addEventListener('pagehide', () => fetch('/api/bye', {method: 'POST', keepalive:
   showSettings();
   agentHint(); poolShow(); splitHint(); styleHint();
   exportHint(); capHint();
-  const j = await api('/api/job');
-  showJob(j);
-  if (j.status === 'running') startPolling();
+  startPolling();   // shows this session's runs; keeps polling only while one is going
 })();
 </script>
 </body>

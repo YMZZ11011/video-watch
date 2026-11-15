@@ -115,6 +115,8 @@ const ZH = {
   'interval': '固定间隔', 'count': '固定数量', 'scene': '场景切换', 'keyframes': '关键帧', 'dynamic': '动态', 'transcript': '仅字幕',
   'taking longer than estimated': '比预计耗时更长', 'the app did not answer': '应用没有响应',
   'Add at least one video URL or file path.': '请至少添加一个视频链接或文件路径。', 'A run is already in progress.': '已有运行在进行中。',
+  'Progress log': '进度日志', 'dismiss': '关闭',
+  'Give each run its own title to tell them apart. Runs go on at the same time and can be stopped one by one.': '为每次运行起一个不同的标题以便区分。多个运行可以同时进行，并且可以逐个停止。',
 };
 
 Object.assign(ZH, {'Another OpenAI-compatible service': '其他 OpenAI 兼容服务', 'Interface language / 界面语言': '界面语言 / Interface language'});
@@ -127,6 +129,7 @@ const ZH_RE = [
   [/^(.+) \(most capable, costliest\)( · .+)?$/, (m, a, b) => `${a}（最强、最贵）${b || ''}`],
   [/^(.+) \(cheapest\)( · .+)?$/, (m, a, b) => `${a}（最便宜）${b || ''}`],
   [/^Item (\d+)$/, (m, a) => `条目 ${a}`],
+  [/^A run titled "(.+)" is already watching\. Give this one another title, or wait for it to finish\.$/, (m, a) => `标题为“${a}”的运行正在进行。请给这次运行换一个标题，或等它完成。`],
   [/^(\d+) videos?$/, (m, a) => `${a} 个视频`],
   [/^(\d+) analys(?:is|es) with (.+)$/, (m, a, b) => `${a} 项分析，使用 ${b}`],
   [/^Using key (.+)$/, (m, a) => `使用密钥 ${a}`],
