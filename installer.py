@@ -25,7 +25,7 @@ import urllib.request
 from pathlib import Path
 
 APP = "Video Watch"
-VERSION = "1.1.0"
+VERSION = "1.3.0"
 EXE = "Video Watch.exe"
 UNINSTALLER = "Uninstall Video Watch.exe"
 REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\VideoWatch"
